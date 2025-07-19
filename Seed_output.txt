@@ -1,0 +1,1 @@
+Error logged: {level: 'error', message: 'Failed to parse structured lesson content from AI.', stack: 'Error: Failed to parse structured lesson content f…/localhost:5173/src/hooks/useSkillTree.ts:111:46)', timestamp: '2025-07-19T13:49:13.163Z', url: 'http://localhost:5173/app/skills'
