@@ -233,37 +233,3 @@ npm run test:coverage
 
 MIT License - feel free to use this project for personal or commercial purposes.
 
-## 🆘 Support
-
-- Check the [Issues](https://github.com/your-repo/issues) page
-- Read the documentation
-- Join our community discussions
-
-## 🎉 What's Included
-
-### **Free Production Features**
-- ✅ User authentication and profiles
-- ✅ Real-time debate functionality
-- ✅ AI case preparation (mock implementation)
-- ✅ Scoring and feedback system
-- ✅ Achievements and gamification
-- ✅ Leaderboards
-- ✅ Admin dashboard
-- ✅ Mobile-responsive design
-- ✅ PWA capabilities
-- ✅ Offline functionality
-- ✅ Performance monitoring
-- ✅ Error tracking
-- ✅ Security features
-
-### **Ready for Production**
-- ✅ Error boundaries and fallbacks
-- ✅ Loading states and skeletons
-- ✅ Form validation and sanitization
-- ✅ SEO optimization
-- ✅ Accessibility features
-- ✅ Cross-browser compatibility
-- ✅ Performance optimizations
-- ✅ Security best practices
-
-This is a **completely free, production-ready** application that can handle real users and scale within free tier limits!
