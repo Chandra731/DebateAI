@@ -49,7 +49,7 @@ const SignupPage: React.FC = () => {
           setFirebaseError('An unexpected error occurred. Please try again.');
           break;
       }
-      console.error('Failed to sign up', error);
+      
     }
   };
 

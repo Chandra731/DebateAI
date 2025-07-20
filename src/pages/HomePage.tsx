@@ -2,21 +2,15 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { 
   BookOpen, 
-  Mic, 
-  Trophy, 
-  Users, 
   ArrowRight, 
   Star,
-  CheckCircle,
-  Brain,
-  Target,
   Zap
 } from 'lucide-react';
 import { useFeatures, useTestimonials, useStatistics } from '../hooks/useHomePage';
-import { Feature, Testimonial, Statistics } from '../types';
+import { Feature, Testimonial } from '../types';
 
 const HomePage: React.FC = () => {
-  const { data: features, isLoading: featuresLoading } = useFeatures();
+  const { data: features } = useFeatures();
   const { data: testimonials, isLoading: testimonialsLoading } = useTestimonials();
   const { data: statistics, isLoading: statisticsLoading } = useStatistics();
 
@@ -59,7 +53,7 @@ const HomePage: React.FC = () => {
               <span className="bg-gradient-to-r from-primary-600 to-secondary-600 bg-clip-text text-transparent"> Argumentation</span>
             </h1>
             <p className="text-xl text-gray-600 mb-8 max-w-3xl mx-auto">
-              India's first AI-powered debate learning platform. Practice with intelligent opponents, 
+              India&apos;s first AI-powered debate learning platform. Practice with intelligent opponents, 
               get expert feedback, and become a debate champion.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
@@ -143,7 +137,7 @@ const HomePage: React.FC = () => {
               What Students Say
             </h2>
             <p className="text-xl text-gray-600">
-              Join thousands of students who've improved their debate skills
+              Join thousands of students who&apos;ve improved their debate skills
             </p>
           </div>
 

@@ -1,4 +1,17 @@
-import React, { useState } from 'react';
+/**
+ * @file AdminDashboard.tsx
+ * @description This component provides a comprehensive dashboard for administrators to manage the DebateAI platform.
+ * It includes features for managing users, debate topics, and platform settings.
+ *
+ * @component
+ * - Manages and displays platform statistics (total users, debates, etc.).
+ * - Allows admins to view, search, and manage all users.
+ * - Provides functionality to grant or revoke admin privileges for users.
+ * - Allows admins to add, edit, and delete debate topics.
+ * - Displays a tab-based interface for easy navigation between different admin sections.
+ * - Handles all user interactions through modals for editing and confirming actions.
+ */
+import React, { useState, useMemo } from 'react';
 import { 
   Users, 
   MessageSquare, 
@@ -9,23 +22,28 @@ import {
   Trash2,
   Download,
   Search,
-  Filter
+  ShieldCheck,
+  ShieldOff
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { useAdminDashboard } from '../hooks/useAdmin';
 import { Topic, Profile, Debate } from '../types';
 
-// Placeholder for a modal component
+/**
+ * A generic modal component for displaying forms and confirmation dialogs.
+ */
 const Modal = ({ children, onClose }: { children: React.ReactNode, onClose: () => void }) => (
   <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-    <div className="bg-white rounded-lg p-6 w-full max-w-md">
+    <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-xl">
       {children}
-      <button onClick={onClose} className="mt-4 bg-gray-200 text-gray-800 px-4 py-2 rounded-lg">Close</button>
     </div>
   </div>
 );
 
+/**
+ * A form for creating and editing debate topics.
+ */
 const TopicForm = ({ topic, onSave, onCancel }: { topic?: Topic, onSave: (data: Partial<Topic>) => void, onCancel: () => void }) => {
   const [title, setTitle] = useState(topic?.title || '');
   const [description, setDescription] = useState(topic?.description || '');
@@ -63,24 +81,66 @@ const TopicForm = ({ topic, onSave, onCancel }: { topic?: Topic, onSave: (data: 
   );
 };
 
+/**
+ * A form for editing a user's properties, specifically their admin status.
+ */
+const UserForm = ({ user, onSave, onCancel }: { user: Profile, onSave: (userId: string, data: Partial<Profile>) => void, onCancel: () => void }) => {
+  const [isAdmin, setIsAdmin] = useState(user.isAdmin || false);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSave(user.id, { isAdmin });
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <h2 className="text-xl font-bold mb-4">Edit User: {user.name}</h2>
+      <p className="text-sm text-gray-500 mb-4">ID: {user.id}</p>
+      <div className="space-y-4">
+        <label className="flex items-center cursor-pointer">
+          <input type="checkbox" checked={isAdmin} onChange={e => setIsAdmin(e.target.checked)} className="sr-only peer" />
+          <div className="relative w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
+          <span className="ml-3 text-sm font-medium text-gray-900">Is Admin</span>
+        </label>
+      </div>
+      <div className="mt-6 flex justify-end space-x-4">
+        <button type="button" onClick={onCancel} className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg">Cancel</button>
+        <button type="submit" className="bg-primary-600 text-white px-4 py-2 rounded-lg">Save Changes</button>
+      </div>
+    </form>
+  );
+};
 
 const AdminDashboard: React.FC = () => {
-  const { user } = useAuth();
+  // --- CONTEXTS & HOOKS ---
+  const { user: currentUser, profile } = useAuth();
   const { showNotification } = useNotification();
-  const [activeTab, setActiveTab] = useState('overview');
   const {
     loading,
     stats,
-    recentUsers,
+    users,
     recentDebates,
     topics,
     addTopic,
     updateTopic,
     deleteTopic,
+    updateUser,
+    deleteUser,
   } = useAdminDashboard();
+  
+  // --- STATE MANAGEMENT ---
+  // Controls the currently visible tab in the dashboard.
+  const [activeTab, setActiveTab] = useState('overview');
+  // State for managing the topic creation/editing modal.
   const [isTopicModalOpen, setIsTopicModalOpen] = useState(false);
   const [editingTopic, setEditingTopic] = useState<Topic | null>(null);
+  // State for managing the user editing modal.
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<Profile | null>(null);
+  // State for the user search input.
+  const [searchTerm, setSearchTerm] = useState('');
 
+  // --- EVENT HANDLERS ---
   const handleAddTopicClick = () => {
     setEditingTopic(null);
     setIsTopicModalOpen(true);
@@ -111,20 +171,50 @@ const AdminDashboard: React.FC = () => {
 
     try {
       await deleteTopic(topicId);
-      showNotification({
-        type: 'success',
-        title: 'Topic Deleted',
-        message: 'Topic has been successfully deleted'
-      });
+      showNotification({ type: 'success', title: 'Topic Deleted', message: 'Topic has been successfully deleted' });
     } catch (error) {
-      showNotification({
-        type: 'error',
-        title: 'Delete Failed',
-        message: 'Failed to delete topic'
-      });
+      showNotification({ type: 'error', title: 'Delete Failed', message: 'Failed to delete topic' });
     }
   };
 
+  const handleEditUserClick = (user: Profile) => {
+    setEditingUser(user);
+    setIsUserModalOpen(true);
+  };
+
+  const handleSaveUser = async (userId: string, data: Partial<Profile>) => {
+    try {
+      await updateUser({ userId, updates: data });
+      showNotification({ type: 'success', title: 'User Updated', message: 'User has been successfully updated.' });
+      setIsUserModalOpen(false);
+    } catch (error) {
+      showNotification({ type: 'error', title: 'Update Failed', message: 'Failed to update user.' });
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!confirm('Are you sure you want to delete this user? This action is irreversible.')) return;
+
+    try {
+      await deleteUser(userId);
+      showNotification({ type: 'success', title: 'User Deleted', message: 'User has been successfully deleted.' });
+    } catch (error) {
+      showNotification({ type: 'error', title: 'Delete Failed', message: 'Failed to delete user.' });
+    }
+  };
+
+  // --- MEMOIZED VALUES ---
+  // Filters the list of users based on the search term.
+  const filteredUsers = useMemo(() => {
+    if (!users) return [];
+    return users.filter(user => 
+      user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.id.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [users, searchTerm]);
+
+  // --- UI CONFIGURATION ---
   const tabs = [
     { id: 'overview', label: 'Overview', icon: TrendingUp },
     { id: 'users', label: 'Users', icon: Users },
@@ -133,17 +223,7 @@ const AdminDashboard: React.FC = () => {
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
-  if (user && !user.isAdmin) {
-    return (
-      <div className="max-w-7xl mx-auto p-6">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-          <h2 className="text-xl font-bold text-red-800 mb-2">Access Denied</h2>
-          <p className="text-red-600">You don't have permission to access the admin dashboard.</p>
-        </div>
-      </div>
-    );
-  }
-
+  // --- RENDER LOGIC ---
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-96">
@@ -152,24 +232,39 @@ const AdminDashboard: React.FC = () => {
     );
   }
 
+  // Security check: Ensure the user is an admin before rendering the dashboard.
+  if (!profile?.isAdmin) {
+    return (
+      <div className="max-w-7xl mx-auto p-6">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+          <h2 className="text-xl font-bold text-red-800 mb-2">Access Denied</h2>
+          <p className="text-red-600">You don&apos;t have permission to access the admin dashboard.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto space-y-6 p-4 md:p-6">
+      {/* Modals for editing content */}
       {isTopicModalOpen && (
         <Modal onClose={() => setIsTopicModalOpen(false)}>
           <TopicForm topic={editingTopic} onSave={handleSaveTopic} onCancel={() => setIsTopicModalOpen(false)} />
         </Modal>
       )}
-      {/* Header */}
+      {isUserModalOpen && editingUser && (
+        <Modal onClose={() => setIsUserModalOpen(false)}>
+          <UserForm user={editingUser} onSave={handleSaveUser} onCancel={() => setIsUserModalOpen(false)} />
+        </Modal>
+      )}
+
+      {/* Dashboard Header */}
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
-            <p className="text-gray-600">Manage your DebateAI platform</p>
+            <p className="text-gray-600 mt-1">Welcome, {currentUser?.displayName || 'Admin'}. Manage your DebateAI platform.</p>
           </div>
-          <button className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors flex items-center space-x-2">
-            <Download className="w-4 h-4" />
-            <span>Export Data</span>
-          </button>
         </div>
       </div>
 
@@ -192,12 +287,13 @@ const AdminDashboard: React.FC = () => {
           ))}
         </div>
 
+        {/* Tab Content */}
         <div className="p-6">
           {activeTab === 'overview' && (
             <div className="space-y-6">
               {/* Stats Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div className="bg-gray-50 rounded-lg p-6">
+                 <div className="bg-gray-50 rounded-lg p-6">
                   <div className="text-2xl font-bold text-gray-900 mb-1">{stats?.totalUsers}</div>
                   <div className="text-sm text-gray-600 mb-2">Total Users</div>
                   <div className="text-xs text-green-600 font-medium">+12% this month</div>
@@ -218,13 +314,12 @@ const AdminDashboard: React.FC = () => {
                   <div className="text-xs text-green-600 font-medium">+5% this month</div>
                 </div>
               </div>
-
               {/* Recent Activity */}
               <div className="grid lg:grid-cols-2 gap-6">
                 <div className="bg-gray-50 rounded-lg p-6">
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Users</h3>
                   <div className="space-y-3">
-                    {recentUsers?.slice(0, 5).map((user: Profile) => (
+                    {users?.slice(0, 5).map((user: Profile) => (
                       <div key={user.id} className="flex items-center justify-between p-3 bg-white rounded-lg">
                         <div>
                           <div className="font-medium text-gray-900">{user.name}</div>
@@ -242,26 +337,18 @@ const AdminDashboard: React.FC = () => {
                     ))}
                   </div>
                 </div>
-
                 <div className="bg-gray-50 rounded-lg p-6">
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Debates</h3>
                   <div className="space-y-3">
                     {recentDebates?.slice(0, 5).map((debate: Debate) => (
                       <div key={debate.id} className="flex items-center justify-between p-3 bg-white rounded-lg">
                         <div>
-                          <div className="font-medium text-gray-900">
-                            {debate.topic_title || 'Unknown Topic'}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            {debate.transcript?.length || 0} participants
-                          </div>
+                          <div className="font-medium text-gray-900">{debate.topic_title || 'Unknown Topic'}</div>
+                          <div className="text-sm text-gray-500">{debate.participants?.length || 0} participants</div>
                         </div>
                         <div className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                          debate.status === 'completed' 
-                            ? 'bg-green-100 text-green-800' 
-                            : debate.status === 'active'
-                            ? 'bg-blue-100 text-blue-800'
-                            : 'bg-gray-100 text-gray-800'
+                          debate.status === 'completed' ? 'bg-green-100 text-green-800' : 
+                          debate.status === 'active' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
                         }`}>
                           {debate.status}
                         </div>
@@ -275,56 +362,64 @@ const AdminDashboard: React.FC = () => {
 
           {activeTab === 'users' && (
             <div className="space-y-6">
-              <div className="flex items-center justify-between">
+              {/* User Management Section */}
+              <div className="flex flex-col sm:flex-row items-center justify-between">
                 <h3 className="text-lg font-semibold text-gray-900">User Management</h3>
-                <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-3 mt-4 sm:mt-0">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                     <input
                       type="text"
-                      placeholder="Search users..."
-                      className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      placeholder="Search by name, email, or ID..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent w-full sm:w-64"
                     />
                   </div>
-                  <button className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50">
-                    <Filter className="w-4 h-4" />
-                  </button>
                 </div>
               </div>
 
-              <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                <table className="w-full">
+              <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
+                <table className="w-full min-w-[600px]">
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="text-left py-3 px-4 font-medium text-gray-700">User</th>
-                      <th className="text-left py-3 px-4 font-medium text-gray-700">School</th>
+                      <th className="text-left py-3 px-4 font-medium text-gray-700">Status</th>
                       <th className="text-left py-3 px-4 font-medium text-gray-700">Level</th>
-                      <th className="text-left py-3 px-4 font-medium text-gray-700">Debates</th>
                       <th className="text-left py-3 px-4 font-medium text-gray-700">Joined</th>
                       <th className="text-left py-3 px-4 font-medium text-gray-700">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {recentUsers?.map((user: Profile) => (
+                    {filteredUsers?.map((user: Profile) => (
                       <tr key={user.id} className="hover:bg-gray-50">
                         <td className="py-3 px-4">
-                          <div>
-                            <div className="font-medium text-gray-900">{user.name}</div>
-                            <div className="text-sm text-gray-500">{user.id}</div>
-                          </div>
+                          <div className="font-medium text-gray-900">{user.name}</div>
+                          <div className="text-sm text-gray-500">{user.email}</div>
                         </td>
-                        <td className="py-3 px-4 text-gray-700">{user.school || 'Not specified'}</td>
-                        <td className="py-3 px-4 text-gray-700">Level {user.level}</td>
-                        <td className="py-3 px-4 text-gray-700">{user.total_debates}</td>
+                        <td className="py-3 px-4">
+                          {user.isAdmin ? (
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-success-100 text-success-800">
+                              <ShieldCheck className="w-3 h-3 mr-1" />
+                              Admin
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                              <ShieldOff className="w-3 h-3 mr-1" />
+                              User
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-gray-700">{user.level || 1}</td>
                         <td className="py-3 px-4 text-gray-700">
                           {user.created_at ? new Date(user.created_at.seconds * 1000).toLocaleDateString() : 'N/A'}
                         </td>
                         <td className="py-3 px-4">
                           <div className="flex items-center space-x-2">
-                            <button className="text-primary-600 hover:text-primary-700">
+                            <button onClick={() => handleEditUserClick(user)} className="text-primary-600 hover:text-primary-700 p-1">
                               <Edit className="w-4 h-4" />
                             </button>
-                            <button className="text-red-600 hover:text-red-700">
+                            <button onClick={() => handleDeleteUser(user.id)} className="text-red-600 hover:text-red-700 p-1">
                               <Trash2 className="w-4 h-4" />
                             </button>
                           </div>
@@ -338,7 +433,7 @@ const AdminDashboard: React.FC = () => {
           )}
 
           {activeTab === 'content' && (
-            <div className="space-y-6">
+             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-gray-900">Content Management</h3>
                 <button onClick={handleAddTopicClick} className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors flex items-center space-x-2">

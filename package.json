@@ -14,7 +14,8 @@
     "test:coverage": "vitest --coverage",
     "type-check": "tsc --noEmit",
     "analyze": "npx vite-bundle-analyzer",
-    "prepare": "husky install"
+    "prepare": "husky install",
+    "seed": "node scripts/seed.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.2",

@@ -2,11 +2,12 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { auth, db } from '../lib/firebase';
 import { onAuthStateChanged, User, updateProfile, signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
+import { Profile } from '../types';
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  profile: any;
+  profile: Profile | null;
   updateUser: (updates: { name?: string; photoURL?: string }) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -15,7 +16,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<any>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -24,7 +25,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (user) {
         const profileDoc = await getDoc(doc(db, 'profiles', user.uid));
         if (profileDoc.exists()) {
-          setProfile(profileDoc.data());
+          setProfile({ id: profileDoc.id, ...profileDoc.data() } as Profile);
         }
       }
       setLoading(false);

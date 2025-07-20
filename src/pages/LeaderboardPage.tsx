@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Trophy, Medal, Award, TrendingUp, Users, Crown, Star, Zap } from 'lucide-react';
+import { Trophy, Medal, Award, Users, Crown, Star, Zap, icons } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLeaderboard, useProfile, useAchievements } from '../hooks/useDatabase';
 import { Profile, Achievement } from '../types';
@@ -242,7 +242,7 @@ const LeaderboardPage: React.FC = () => {
               </div>
               {userRank && userRank > 10 && (
                 <div className="text-xs text-gray-500">
-                  You're {((userRank - 10) * 50)} XP away from the top 10!
+                  You&apos;re {((userRank - 10) * 50)} XP away from the top 10!
                 </div>
               )}
             </div>
@@ -268,15 +268,18 @@ const LeaderboardPage: React.FC = () => {
           <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Popular Achievements</h3>
             <div className="space-y-3">
-              {popularAchievements?.slice(0, 5).map((achievement: Achievement, index: number) => (
-                <div key={index} className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <span className="text-2xl">{achievement.icon || '🏆'}</span>
-                    <span className="text-gray-700 font-medium">{achievement.name}</span>
+              {popularAchievements?.slice(0, 5).map((achievement: Achievement, index: number) => {
+                const IconComponent = icons[achievement.icon as keyof typeof icons] || Trophy; // Default to Trophy
+                return (
+                  <div key={index} className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <IconComponent className="w-6 h-6 text-primary-500" />
+                      <span className="text-gray-700 font-medium">{achievement.name}</span>
+                    </div>
+                    <span className="text-sm text-gray-500">{achievement.xp_reward} XP</span>
                   </div>
-                  <span className="text-sm text-gray-500">{achievement.xp_reward} XP</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -296,4 +299,4 @@ const LeaderboardPage: React.FC = () => {
   );
 };
 
-export default LeaderboardPage
+export default LeaderboardPage;

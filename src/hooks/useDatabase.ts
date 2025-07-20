@@ -8,7 +8,7 @@ import { Profile, Topic, Debate, Case, Achievement, UserAchievement } from '../t
 // Generic hook for data fetching with loading states
 function useAsyncData<T>(
   fetchFn: () => Promise<T>,
-  dependencies: any[] = [],
+  dependencies: DependencyList = [],
   initialData?: T
 ) {
   const [data, setData] = useState<T | undefined>(initialData);
@@ -51,13 +51,9 @@ export function useProfile() {
   const updateProfile = useCallback(async (updates: Partial<Profile>) => {
     if (!user?.uid) throw new Error('User not authenticated');
     
-    try {
-      const updatedProfile = await DatabaseService.updateProfile(user.uid, updates);
-      await refetch(); // Refresh the data
-      return updatedProfile;
-    } catch (err) {
-      throw err;
-    }
+    const updatedProfile = await DatabaseService.updateProfile(user.uid, updates);
+    await refetch(); // Refresh the data
+    return updatedProfile;
   }, [user?.uid, refetch]);
 
   return { 
@@ -165,7 +161,7 @@ export function useRealtimeSubscription<T>(
     return () => {
       unsubscribe();
     };
-  }, [collectionName, docId, ...dependencies]);
+  }, [collectionName, docId, callback, ...dependencies]);
 }
 
 // Debounced hook for search functionality

@@ -64,20 +64,20 @@ export const sanitizers = {
 };
 
 // Form validation hook
-export const useFormValidation = <T extends Record<string, any>>(
-  initialValues: T,
-  validationRules: Record<keyof T, (value: any) => string | null>
+export const useFormValidation = <TFieldValues extends Record<string, any>>(
+  initialValues: TFieldValues,
+  validationRules: { [K in keyof TFieldValues]?: (value: TFieldValues[K]) => string | null }
 ) => {
-  const [values, setValues] = useState<T>(initialValues);
-  const [errors, setErrors] = useState<Partial<Record<keyof T, string>>>({});
-  const [touched, setTouched] = useState<Partial<Record<keyof T, boolean>>>({});
+  const [values, setValues] = useState<TFieldValues>(initialValues);
+  const [errors, setErrors] = useState<Partial<Record<keyof TFieldValues, string>>>({});
+  const [touched, setTouched] = useState<Partial<Record<keyof TFieldValues, boolean>>>({});
 
-  const validateField = (name: keyof T, value: any): string | null => {
+  const validateField = <TKey extends keyof TFieldValues>(name: TKey, value: TFieldValues[TKey]): string | null => {
     const rule = validationRules[name];
     return rule ? rule(value) : null;
   };
 
-  const handleChange = (name: keyof T, value: any) => {
+  const handleChange = <TKey extends keyof TFieldValues>(name: TKey, value: TFieldValues[TKey]) => {
     setValues(prev => ({ ...prev, [name]: value }));
     
     if (touched[name]) {
@@ -86,29 +86,29 @@ export const useFormValidation = <T extends Record<string, any>>(
     }
   };
 
-  const handleBlur = (name: keyof T) => {
+  const handleBlur = <TKey extends keyof TFieldValues>(name: TKey) => {
     setTouched(prev => ({ ...prev, [name]: true }));
     const error = validateField(name, values[name]);
     setErrors(prev => ({ ...prev, [name]: error }));
   };
 
   const validateAll = (): boolean => {
-    const newErrors: Partial<Record<keyof T, string>> = {};
+    const newErrors: Partial<Record<keyof TFieldValues, string>> = {};
     let isValid = true;
 
-    Object.keys(validationRules).forEach(key => {
-      const error = validateField(key as keyof T, values[key]);
+    (Object.keys(validationRules) as Array<keyof TFieldValues>).forEach(key => {
+      const error = validateField(key, values[key]);
       if (error) {
-        newErrors[key as keyof T] = error;
+        newErrors[key] = error;
         isValid = false;
       }
     });
 
     setErrors(newErrors);
-    setTouched(Object.keys(validationRules).reduce((acc, key) => {
-      acc[key as keyof T] = true;
+    setTouched((Object.keys(validationRules) as Array<keyof TFieldValues>).reduce((acc, key) => {
+      acc[key] = true;
       return acc;
-    }, {} as Partial<Record<keyof T, boolean>>));
+    }, {} as Partial<Record<keyof TFieldValues, boolean>>));
 
     return isValid;
   };

@@ -130,7 +130,6 @@ export const freeImageUtils = {
         
         img.onerror = () => {
           setHasError(true);
-          console.warn(`Failed to load image: ${src}`);
         };
         
         img.src = src;
@@ -213,17 +212,24 @@ export const freeMemoryUtils = {
 
   // Memory usage monitoring (free)
   useMemoryMonitor: () => {
-    const [memoryInfo, setMemoryInfo] = useState<any>(null);
+    interface MemoryInfo {
+      usedJSHeapSize: number;
+      totalJSHeapSize: number;
+      jsHeapSizeLimit: number;
+    }
+    const [memoryInfo, setMemoryInfo] = useState<MemoryInfo | null>(null);
 
     useEffect(() => {
       const checkMemory = () => {
         if ('memory' in performance) {
-          const memory = (performance as any).memory;
-          setMemoryInfo({
-            used: Math.round(memory.usedJSHeapSize / 1048576), // MB
-            total: Math.round(memory.totalJSHeapSize / 1048576), // MB
-            limit: Math.round(memory.jsHeapSizeLimit / 1048576), // MB
-          });
+          const memory = (performance as Performance & { memory?: MemoryInfo }).memory;
+          if (memory) {
+            setMemoryInfo({
+              usedJSHeapSize: memory.usedJSHeapSize,
+              totalJSHeapSize: memory.totalJSHeapSize,
+              jsHeapSizeLimit: memory.jsHeapSizeLimit,
+            });
+          }
         }
       };
 

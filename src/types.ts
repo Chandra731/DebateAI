@@ -54,6 +54,12 @@ export interface Debate {
   ai_level?: number;
   winner_side?: 'pro' | 'con';
   side?: 'pro' | 'con';
+  user_score?: number;
+  ai_score?: number;
+  feedback?: {
+    strengths: string;
+    improvements: string;
+  };
 }
 
 export interface Achievement {
@@ -74,6 +80,15 @@ export interface UserAchievement {
   achievements: Achievement;
   unlocked_at?: string;
   progress?: number;
+}
+
+export interface UserLessonCompletion {
+  user_id: string;
+  lesson_id: string;
+  time_spent: number;
+  comprehension_score: number;
+  notes: string | null;
+  completed_at: string;
 }
 
 export interface Feature {
@@ -139,6 +154,10 @@ export interface SkillCategory {
   skills?: Skill[];
 }
 
+export interface Prerequisite {
+  prerequisite_skill_id: string;
+}
+
 export interface Skill {
   id: string;
   category_id: string;
@@ -200,8 +219,18 @@ export interface Exercise {
   lesson_id: string;
   title: string;
   type: 'mcq' | 'text_input' | 'speech_analysis' | 'drag_and_drop' | 'rebuttal_practice' | 'fallacy_identification';
-  content: any;
-  correct_answer?: any;
+  content: {
+    question?: string;
+    options?: string[];
+    prompt?: string;
+    word_limit?: number;
+    structure_required?: boolean;
+    text?: string;
+    focus_areas?: string[];
+    items?: { id: string; text: string }[];
+    scenarios?: { text: string }[];
+  };
+  correct_answer?: string | { selected_option: string };
   ai_evaluation_prompt: string;
   max_attempts: number;
   passing_score: number;
@@ -215,10 +244,10 @@ export interface ExerciseAttempt {
   user_id: string;
   exercise_id: string;
   attempt_number: number;
-  user_answer: any;
+  user_answer: string | { selected_option: string } | { text: string } | { audio_duration: number; audio_data: string; practice_text: string } | { ordered_items: string[] } | { identified_fallacies: Record<string, string> };
   score: number;
   is_correct: boolean;
-  ai_feedback: any;
+  ai_feedback: AIFeedback;
   time_spent: number;
   completed_at: string;
 }
@@ -230,19 +259,18 @@ export interface AIFeedback {
   skill_score: number;
   unlock_next_skill: boolean;
   detailed_analysis?: any;
-  mini_lessons?: MiniLesson[];
 }
 
-export interface MiniLesson {
-  title: string;
-  content: string;
-  quiz: Quiz;
-}
-
-export interface Quiz {
-  question: string;
-  options: string[];
-  correct_answer: string;
+export interface UserReviewSchedule {
+  id?: string;
+  user_id: string;
+  item_id: string;
+  item_type: 'lesson' | 'exercise';
+  review_at: string;
+  ease_factor: number;
+  interval: number;
+  repetitions: number;
+  skill_name?: string; // Added for display in review schedule
 }
 
 export interface UserLearningGoals {
@@ -259,5 +287,5 @@ export interface LearningAnalytics {
   averageScore: number;
   totalXPEarned: number;
   skillProgress: (UserSkillProgress & { skill?: Skill })[];
-  recentActivity: (any)[];
+  recentActivity: (ExerciseAttempt | UserLessonCompletion)[];
 }

@@ -4,12 +4,6 @@ import { GroqCompletionResponse, ExerciseEvaluation, DebateCase } from '../types
 const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
 const API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
-if (!GROQ_API_KEY) {
-  console.warn(
-    'Groq API key not found. AI features will be disabled. Please add VITE_GROQ_API_KEY to your .env file.'
-  );
-}
-
 export class GroqService {
   static async getCompletion(
     prompt: string,
@@ -56,21 +50,19 @@ export class GroqService {
         // If it's not JSON, return the content as a string
         return content;
       }
-    } catch (error) {
-      logger.error(error as Error, {
-        component: 'GroqService',
-        action: 'getCompletion',
-      });
-      throw new Error('Failed to get completion from Groq API.');
-    }
+    } catch {
+        logger.error(new Error('Failed to get completion from Groq API.'), {
+          component: 'GroqService',
+          action: 'getCompletion',
+        });
+        throw new Error('Failed to get completion from Groq API.');
+      }
   }
 
   static getMockCompletion(
     prompt: string
   ): string | ExerciseEvaluation | DebateCase {
-    console.log('getMockCompletion received prompt:', prompt);
     if (prompt.includes('evaluate the following exercise submission')) {
-      console.log('getMockCompletion returning exercise submission mock.');
       return {
         verdict: 'partial',
         explanation:
@@ -82,7 +74,6 @@ export class GroqService {
         skill_score: 75,
       } as ExerciseEvaluation;
     } else if (prompt.includes('Generate a debate case')) {
-      console.log('getMockCompletion returning debate case mock.');
       return {
         framing: 'This is a mock framing for the debate case.',
         contentions: [
@@ -108,7 +99,6 @@ export class GroqService {
         fallacyChecks: ['Mock fallacy check 1.', 'Mock fallacy check 2.'],
       } as DebateCase;
     }
-    console.log('getMockCompletion returning generic mock.');
     return 'This is a mock response from the Groq service.';
   }
 }

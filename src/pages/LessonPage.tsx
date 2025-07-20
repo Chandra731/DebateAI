@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useLesson, useLessonExercises, useSkillTree } from '../hooks/useSkillTree';
-import { SkillTreeService, LessonSection, QuizQuestion } from '../services/skillTreeService';
+import { SkillTreeService, QuizQuestion } from '../services/skillTreeService';
 import { useAuth } from '../contexts/AuthContext';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import Button from '../components/common/Button';
-import { ArrowLeft, CheckCircle, XCircle, Star, BrainCircuit } from 'lucide-react';
+import { ArrowLeft, CheckCircle, XCircle, BrainCircuit } from 'lucide-react';
 import { useNotification } from '../contexts/NotificationContext';
 import ReactMarkdown from 'react-markdown';
 
@@ -20,11 +20,10 @@ const LessonPage: React.FC = () => {
 
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
   const [currentQuizQuestionIndex, setCurrentQuizQuestionIndex] = useState(0);
-  const [quizQuestionAttempted, setQuizQuestionAttempted] = useState(false);
-  const [quizQuestionCorrect, setQuizQuestionCorrect] = useState(false);
+  const [quizFeedbackStatus, setQuizFeedbackStatus] = useState<'unattempted' | 'correct' | 'incorrect'>('unattempted');
   const [selectedQuizOption, setSelectedQuizOption] = useState<string | null>(null);
   const [lessonCompleted, setLessonCompleted] = useState(false);
-  const [startTime, setStartTime] = useState(Date.now());
+  const [startTime] = useState(Date.now());
   const [correctAnswers, setCorrectAnswers] = useState(0);
 
   const currentSection = lesson?.content[currentSectionIndex];
@@ -37,8 +36,7 @@ const LessonPage: React.FC = () => {
     // Reset state when lessonId changes
     setCurrentSectionIndex(0);
     setCurrentQuizQuestionIndex(0);
-    setQuizQuestionAttempted(false);
-    setQuizQuestionCorrect(false);
+    setQuizFeedbackStatus('unattempted');
     setSelectedQuizOption(null);
     setLessonCompleted(false);
   }, [lessonId]);
@@ -46,12 +44,13 @@ const LessonPage: React.FC = () => {
   const handleQuizSubmit = () => {
     if (!currentQuizQuestion || !selectedQuizOption) return;
 
-    setQuizQuestionAttempted(true);
-    if (selectedQuizOption === currentQuizQuestion.correct_answer) {
-      setQuizQuestionCorrect(true);
+    const trimmedSelectedOption = selectedQuizOption.trim();
+    const trimmedCorrectAnswer = currentQuizQuestion.correct_answer.trim();
+    const isCorrect = trimmedSelectedOption === trimmedCorrectAnswer;
+    setQuizFeedbackStatus(isCorrect ? 'correct' : 'incorrect');
+
+    if (isCorrect) {
       setCorrectAnswers(prev => prev + 1);
-    } else {
-      setQuizQuestionCorrect(false);
     }
   };
 
@@ -72,12 +71,11 @@ const LessonPage: React.FC = () => {
       showNotification({
         type: 'success',
         title: 'Lesson Complete!',
-        message: `You've earned XP and made progress.`
+        message: `You&apos;ve earned XP and made progress.`
       });
       refetchSkillTree(); // Refetch skill tree data to update UI
       setLessonCompleted(true);
     } catch (error) {
-      console.error("Error completing lesson:", error);
       showNotification({
         type: 'error',
         title: 'Error',
@@ -89,8 +87,7 @@ const LessonPage: React.FC = () => {
   const handlePreviousSection = () => {
     if (currentSection?.type === 'quiz' && currentQuizQuestionIndex > 0) {
       setCurrentQuizQuestionIndex(prev => prev - 1);
-      setQuizQuestionAttempted(false);
-      setQuizQuestionCorrect(false);
+      setQuizFeedbackStatus('unattempted');
       setSelectedQuizOption(null);
     } else if (currentSectionIndex > 0) {
       setCurrentSectionIndex(prev => prev - 1);
@@ -100,8 +97,7 @@ const LessonPage: React.FC = () => {
       } else {
         setCurrentQuizQuestionIndex(0);
       }
-      setQuizQuestionAttempted(false);
-      setQuizQuestionCorrect(false);
+      setQuizFeedbackStatus('unattempted');
       setSelectedQuizOption(null);
     }
   };
@@ -114,20 +110,18 @@ const LessonPage: React.FC = () => {
     const isQuizFinished = isQuizSection && currentQuizQuestionIndex >= (currentSection.quiz?.length || 0) - 1;
 
     if (isQuizSection) {
-      if (!quizQuestionAttempted) return;
+      if (quizFeedbackStatus === 'unattempted') return; // Must attempt quiz before moving on
 
       if (!isQuizFinished) {
         // Move to next quiz question
         setCurrentQuizQuestionIndex(prev => prev + 1);
-        setQuizQuestionAttempted(false);
-        setQuizQuestionCorrect(false);
+        setQuizFeedbackStatus('unattempted');
         setSelectedQuizOption(null);
       } else if (!isLastSection) {
         // Move to next lesson section
         setCurrentSectionIndex(prev => prev + 1);
         setCurrentQuizQuestionIndex(0);
-        setQuizQuestionAttempted(false);
-        setQuizQuestionCorrect(false);
+        setQuizFeedbackStatus('unattempted');
         setSelectedQuizOption(null);
       } else {
         // End of all sections
@@ -193,32 +187,36 @@ const LessonPage: React.FC = () => {
                   <div className="space-y-3">
                     {currentQuizQuestion.options.map((option, index) => {
                       const isSelected = selectedQuizOption === option;
-                      const isCorrect = currentQuizQuestion.correct_answer === option;
+                      const isCorrectOption = option.trim() === currentQuizQuestion.correct_answer.trim();
 
-                      let buttonVariant: "success" | "danger" | "outline" = "outline";
-                      if (quizQuestionAttempted) {
-                        if (isCorrect) buttonVariant = "success";
-                        else if (isSelected && !isCorrect) buttonVariant = "danger";
+                      let buttonVariant: "outline" | "success" | "danger" = "outline";
+                      if (quizFeedbackStatus !== 'unattempted') {
+                        if (isCorrectOption) {
+                          buttonVariant = "success";
+                        } else if (isSelected && !isCorrectOption) {
+                          buttonVariant = "danger";
+                        }
                       } else if (isSelected) {
-                        buttonVariant = "outline"; // Keep it neutral until submitted
+                        buttonVariant = "primary"; // Highlight selected before submission
                       }
 
                       return (
                         <Button
                           key={index}
                           variant={buttonVariant}
-                          onClick={() => !quizQuestionAttempted && setSelectedQuizOption(option)}
-                          className={`w-full text-left justify-start ${quizQuestionAttempted ? 'cursor-not-allowed' : ''}`}
-                          disabled={quizQuestionAttempted}
+                          onClick={() => quizFeedbackStatus === 'unattempted' && setSelectedQuizOption(option)}
+                          className={`w-full text-left justify-start ${quizFeedbackStatus !== 'unattempted' ? 'cursor-not-allowed' : ''}`}
+                          disabled={quizFeedbackStatus !== 'unattempted'}
                         >
                           {option}
-                          {quizQuestionAttempted && isCorrect && <CheckCircle className="ml-auto text-green-500" />}
-                          {quizQuestionAttempted && isSelected && !isCorrect && <XCircle className="ml-auto text-red-500" />}
+                          {quizFeedbackStatus === 'correct' && isCorrectOption && <CheckCircle className="ml-auto text-green-500" />}
+                          {quizFeedbackStatus === 'incorrect' && isCorrectOption && <CheckCircle className="ml-auto text-green-500" />}
+                          {quizFeedbackStatus === 'incorrect' && isSelected && !isCorrectOption && <XCircle className="ml-auto text-red-500" />}
                         </Button>
                       );
                     })}
                   </div>
-                  {!quizQuestionAttempted && (
+                  {quizFeedbackStatus === 'unattempted' && (
                     <Button
                       variant="primary"
                       onClick={handleQuizSubmit}
@@ -228,10 +226,18 @@ const LessonPage: React.FC = () => {
                       Submit Answer
                     </Button>
                   )}
-                  {quizQuestionAttempted && !quizQuestionCorrect && (
-                    <div className="mt-4 p-3 bg-red-100 border border-red-200 rounded-lg text-center">
-                      <p className="text-red-700 font-semibold">Incorrect.</p>
-                      <p className="text-sm text-red-600">The correct answer is highlighted in green.</p>
+                  {quizFeedbackStatus !== 'unattempted' && (
+                    <div className={`mt-4 p-3 rounded-lg text-center ${
+                      quizFeedbackStatus === 'correct' ? 'bg-green-100 border border-green-200' : 'bg-red-100 border border-red-200'
+                    }`}>
+                      <p className={`font-semibold ${
+                        quizFeedbackStatus === 'correct' ? 'text-green-700' : 'text-red-700'
+                      }`}>
+                        {quizFeedbackStatus === 'correct' ? 'Correct!' : 'Incorrect.'}
+                      </p>
+                      {quizFeedbackStatus === 'incorrect' && (
+                        <p className="text-sm text-red-600">The correct answer is highlighted in green.</p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -248,7 +254,7 @@ const LessonPage: React.FC = () => {
                 <Button
                   variant="primary"
                   onClick={handleNextSection}
-                  disabled={currentSection.type === 'quiz' && !quizQuestionAttempted}
+                  disabled={currentSection.type === 'quiz' && quizFeedbackStatus === 'unattempted'}
                 >
                   {isLastContent ? 'Finish Lesson' : 'Next'}
                 </Button>
@@ -258,7 +264,7 @@ const LessonPage: React.FC = () => {
             <div className="text-center py-12">
               <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
               <h2 className="text-2xl font-bold text-gray-900">Lesson Complete!</h2>
-              <p className="text-gray-600 mb-8">You've finished the lesson. Now, test your knowledge with these exercises.</p>
+              <p className="text-gray-600 mb-8">You&apos;ve finished the lesson. Now, test your knowledge with these exercises.</p>
               
               {exercisesLoading ? (
                 <LoadingSpinner />

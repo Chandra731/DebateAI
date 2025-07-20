@@ -5,21 +5,17 @@ import { useProfile, useUserDebates, useAchievements } from '../hooks/useDatabas
 import { useLearningAnalytics } from '../hooks/useSkillTree';
 import { 
   Trophy, 
-  Target, 
-  Clock, 
-  TrendingUp,
   FileText,
   Mic,
-  Users,
   Award,
   ArrowRight,
-  Calendar,
   BookOpen,
   Zap,
   TreePine,
-  Star
+  Star,
+  icons
 } from 'lucide-react';
-import { Achievement, Debate, LearningAnalytics, Profile } from '../types';
+import { Achievement, Debate } from '../types';
 
 const DashboardPage: React.FC = () => {
   const { user } = useAuth();
@@ -290,7 +286,7 @@ const DashboardPage: React.FC = () => {
                   key={achievement.id} 
                   className="p-4 rounded-lg border-2 border-gray-200 bg-gray-50 hover:border-primary-200 hover:bg-primary-50 transition-colors"
                 >
-                  <div className="text-2xl mb-2">{achievement.icon}</div>
+                  {React.createElement(icons[achievement.icon as keyof typeof icons], { className: "text-2xl mb-2" })}
                   <div className="font-medium text-gray-700 text-sm">
                     {achievement.name}
                   </div>

@@ -102,7 +102,7 @@ VITE_ENABLE_SKILL_TREE=true`;
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
             <h4 className="font-semibold text-gray-800 mb-2">After setup:</h4>
             <p className="text-gray-600 text-sm">
-              Once you've updated your .env file and run the seed script, restart the development server by stopping it (Ctrl+C) 
+              Once you&apos;ve updated your .env file and run the seed script, restart the development server by stopping it (Ctrl+C) 
               and running <code className="bg-gray-200 px-1 rounded">npm run dev</code> again.
             </p>
           </div>

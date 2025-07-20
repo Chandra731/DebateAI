@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useLessonExercises } from '../hooks/useSkillTree';
+import { useLessonExercises, useSkillTree } from '../hooks/useSkillTree';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
-import { SkillTreeService, Exercise, AIFeedback } from '../services/skillTreeService';
+import { SkillTreeService, AIFeedback } from '../services/skillTreeService';
 import * as ExerciseComponents from '../components/SkillTree/ExerciseComponents';
 import LoadingSpinner from '../components/common/LoadingSpinner';
-import { ArrowLeft, CheckCircle, XCircle } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import Button from '../components/common/Button';
 
 const ExercisePage: React.FC = () => {
@@ -17,34 +17,32 @@ const ExercisePage: React.FC = () => {
 
   const { exercise, exercises, loading, error } = useLessonExercises(lessonId!, exerciseId);
   
-  const [userAnswer, setUserAnswer] = useState<any>(null);
   const [feedback, setFeedback] = useState<AIFeedback | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [attempts, setAttempts] = useState(0);
-  const [isMastered, setIsMastered] = useState(false);
 
-  const handleExerciseSubmit = async (answer: any) => {
+  const { getRecommendedLesson } = useSkillTree();
+
+  const handleExerciseSubmit = async (answer: Parameters<typeof SkillTreeService.submitExerciseAttempt>[2]) => {
     if (!user || !exercise) return;
 
     setIsSubmitting(true);
     setFeedback(null);
 
     try {
-      const { feedback: aiFeedback, masteryAchieved } = await SkillTreeService.submitExerciseAttempt(
+      const { feedback: aiFeedback } = await SkillTreeService.submitExerciseAttempt(
         user.uid,
         exercise.id,
         answer,
         0 // timeSpent can be implemented later
       );
       setFeedback(aiFeedback);
-      setUserAnswer(answer);
       setAttempts(prev => prev + 1);
-      if (masteryAchieved) {
-        setIsMastered(true);
+      if (aiFeedback.unlock_next_skill) {
         showNotification({
           type: 'success',
-          title: 'Skill Mastered!',
-          message: 'Congratulations! You have mastered this skill.'
+          title: 'Skill Unlocked!',
+          message: 'Congratulations! You have unlocked a new skill.'
         });
       }
     } catch (err) {
@@ -59,30 +57,71 @@ const ExercisePage: React.FC = () => {
     }
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
+    if (!feedback) return; // Should not happen if continue button is shown after feedback
+
+    // 1. Check for next exercise in current lesson
     const currentIndex = exercises.findIndex(ex => ex.id === exerciseId);
     const nextExercise = exercises[currentIndex + 1];
 
     if (nextExercise) {
       navigate(`/app/skills/${skillId}/lessons/${lessonId}/exercises/${nextExercise.id}`);
       setFeedback(null);
-      setUserAnswer(null);
       setAttempts(0);
-    } else {
-      // All exercises completed
-      navigate(`/app/skills/${skillId}/lessons/${lessonId}`);
+      return;
     }
+
+    // 2. Check for next lesson in current skill
+    const currentSkillLessons = await SkillTreeService.getSkillLessons(skillId!);
+    const currentLessonIndex = currentSkillLessons.findIndex(l => l.id === lessonId);
+    const nextLesson = currentSkillLessons[currentLessonIndex + 1];
+
+    if (nextLesson) {
+      navigate(`/app/skills/${skillId}/lessons/${nextLesson.id}`);
+      setFeedback(null);
+      setAttempts(0);
+      return;
+    }
+
+    // 3. If skill unlocked, find recommended lesson across skill tree
+    if (feedback.unlock_next_skill) {
+      const recommendedLesson = await getRecommendedLesson();
+      if (recommendedLesson) {
+        showNotification({
+          type: 'info',
+          title: 'Next Recommended Lesson',
+          message: `You're ready for "${recommendedLesson.title}"!`
+        });
+        navigate(`/app/skills/${recommendedLesson.skill_id}/lessons/${recommendedLesson.id}`);
+        setFeedback(null);
+        setAttempts(0);
+        return;
+      }
+    }
+
+    // 4. Fallback: All exercises/lessons in this path completed, go to skill tree overview
+    showNotification({
+      type: 'success',
+      title: 'Path Completed!',
+      message: 'You have completed all available content in this path.'
+    });
+    navigate(`/app/skills`);
+    setFeedback(null);
+    setAttempts(0);
   };
 
   const handleRetry = () => {
     setFeedback(null);
-    setUserAnswer(null);
   };
   
   const renderExerciseComponent = () => {
     if (!exercise) return null;
 
-    const props = {
+    const props: {
+      exercise: typeof exercise;
+      onSubmit: (answer: ExerciseAttempt['user_answer']) => void;
+      disabled: boolean;
+    } = {
       exercise,
       onSubmit: handleExerciseSubmit,
       disabled: isSubmitting || !!feedback,

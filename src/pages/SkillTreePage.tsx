@@ -1,5 +1,4 @@
 import React from 'react';
-import { Helmet } from 'react-helmet-async';
 import SkillTreeView from '../components/SkillTree/SkillTreeView';
 import ReviewSchedule from '../components/SkillTree/ReviewSchedule';
 import SEO from '../components/common/SEO';

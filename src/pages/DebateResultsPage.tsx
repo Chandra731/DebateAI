@@ -3,11 +3,11 @@ import { useParams, Link } from 'react-router-dom';
 import { DatabaseService } from '../services/database';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import Button from '../components/common/Button';
-import { Trophy, Star, MessageSquare, Brain, BarChart2 } from 'lucide-react';
+import { Trophy, Brain, BarChart2 } from 'lucide-react';
 
 const DebateResultsPage: React.FC = () => {
   const { debateId } = useParams<{ debateId: string }>();
-  const [debate, setDebate] = useState<any>(null);
+  const [debate, setDebate] = useState<Debate | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -21,7 +21,7 @@ const DebateResultsPage: React.FC = () => {
         } else {
           setError('Debate not found.');
         }
-      } catch (err) {
+      } catch {
         setError('Failed to load debate results.');
       } finally {
         setLoading(false);
@@ -89,7 +89,7 @@ const DebateResultsPage: React.FC = () => {
       <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
         <h2 className="text-2xl font-semibold text-gray-900 mb-4">Transcript</h2>
         <div className="space-y-4 max-h-96 overflow-y-auto">
-          {debate.transcript.map((entry: any, index: number) => (
+          {debate.transcript.map((entry: { speaker: string; text: string; timestamp: string }, index: number) => (
             <div key={index} className={`p-4 rounded-lg ${
               entry.speaker === 'You' ? 'bg-primary-50 border-l-4 border-primary-500' : 'bg-secondary-50 border-l-4 border-secondary-500'
             }`}>

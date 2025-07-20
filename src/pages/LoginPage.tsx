@@ -3,7 +3,6 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
 import { signInWithEmailAndPassword, AuthError } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 
@@ -38,7 +37,7 @@ const LoginPage: React.FC = () => {
           setFirebaseError('An unexpected error occurred. Please try again.');
           break;
       }
-      console.error('Failed to login', error);
+      
     }
   };
 
@@ -62,7 +61,7 @@ const LoginPage: React.FC = () => {
             {isSubmitting ? 'Logging in...' : 'Login'}
           </button>
         </form>
-        <p className="text-center mt-4">Don't have an account? <Link to="/signup" className="text-blue-500">Sign up</Link></p>
+        <p className="text-center mt-4">Don&apos;t have an account? <Link to="/signup" className="text-blue-500">Sign up</Link></p>
       </div>
     </div>
   );

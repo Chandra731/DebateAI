@@ -1,5 +1,4 @@
 // Service Worker for offline functionality (free PWA feature)
-const CACHE_NAME = 'debateai-v1';
 const STATIC_CACHE = 'debateai-static-v1';
 const DYNAMIC_CACHE = 'debateai-dynamic-v1';
 

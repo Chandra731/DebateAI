@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { FileText, Sparkles, Search, BookOpen, Target, Shield, Lightbulb, History } from 'lucide-react';
+import React, { useState } from 'react';
+import { FileText, Sparkles, Search, BookOpen, Target, Shield, Lightbulb } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { DatabaseService } from '../services/database';
 import { useTopics, useUserCases } from '../hooks/useDatabase';
@@ -18,13 +18,6 @@ const CasePrepPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [caseData, setCaseData] = useState<any>(null);
   const [customTopic, setCustomTopic] = useState('');
-
-  console.log('Button disabled state check:', {
-    selectedTopic,
-    position,
-    loading,
-    isDisabled: !selectedTopic?.title || !position || loading
-  });
 
   const handleTopicSelect = (topic: any) => {
     setSelectedTopic(topic);
@@ -154,7 +147,10 @@ const CasePrepPage: React.FC = () => {
                 <input
                   type="text"
                   value={customTopic}
-                  onChange={(e) => handleCustomTopicChange(e.target.value)}
+                  onChange={(e) => {
+                    setCustomTopic(e.target.value);
+                    setSelectedTopic({ id: 'custom', title: e.target.value });
+                  }}
                   placeholder="Enter your debate motion..."
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 />
@@ -261,7 +257,7 @@ const CasePrepPage: React.FC = () => {
                   <h3 className="text-lg font-semibold text-gray-900">Main Arguments</h3>
                 </div>
                 <div className="space-y-4">
-                  {caseData.contentions.map((contention: any, index: number) => (
+                  {caseData.contentions.map((contention: { title: string; description: string; evidence: string }, index: number) => (
                     <div key={index} className="p-4 bg-gray-50 rounded-lg">
                       <h4 className="font-semibold text-gray-900 mb-2">
                         {index + 1}. {contention.title}

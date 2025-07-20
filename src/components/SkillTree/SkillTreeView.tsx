@@ -1,25 +1,22 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSkillTree } from '../../hooks/useSkillTree';
-import { Lock, CheckCircle, Star, Trophy, BookOpen } from 'lucide-react';
+import { Lock, Star, Trophy, BookOpen, icons } from 'lucide-react';
 import LoadingSpinner from '../common/LoadingSpinner';
 import SkillModal from './SkillModal';
+import { Skill } from '../../types';
 
-// Duolingo-style colors
-const colors = {
-  unlocked: 'bg-primary-500 border-primary-600',
-  locked: 'bg-gray-300 border-gray-400',
-  mastered: 'bg-yellow-400 border-yellow-500',
-  connector: 'border-gray-300',
-};
-
-const SkillNode: React.FC<{
-  skill: any;
+interface SkillNodeProps {
+  skill: Skill;
   onClick: () => void;
   isUnlocked: boolean;
   isMastered: boolean;
   masteryLevel: number;
-}> = ({ skill, onClick, isUnlocked, isMastered, masteryLevel }) => {
+}
+
+const SkillNode: React.FC<SkillNodeProps> = ({
+  skill, onClick, isUnlocked, isMastered, masteryLevel
+}) => {
   const status = isMastered ? 'mastered' : isUnlocked ? 'unlocked' : 'locked';
 
   const statusColors = {
@@ -30,6 +27,8 @@ const SkillNode: React.FC<{
 
   const progressRingColor = isMastered ? 'stroke-yellow-400' : 'stroke-primary-500';
 
+  const LucideIcon = icons[skill.icon as keyof typeof icons] || Lock; // Default to Lock if icon not found
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.5 }}
@@ -39,42 +38,44 @@ const SkillNode: React.FC<{
       className="relative flex flex-col items-center text-center cursor-pointer group"
       onClick={isUnlocked ? onClick : undefined}
     >
-      {/* Progress Ring */}
-      {isUnlocked && !isMastered && (
-        <svg className="absolute w-24 h-24" viewBox="0 0 100 100">
-          <circle
-            className="stroke-gray-200"
-            strokeWidth="8"
-            cx="50"
-            cy="50"
-            r="42"
-            fill="transparent"
-          />
-          <motion.circle
-            className={progressRingColor}
-            strokeWidth="8"
-            cx="50"
-            cy="50"
-            r="42"
-            fill="transparent"
-            strokeDasharray="264"
-            strokeDashoffset={264 - (264 * masteryLevel) / 100}
-            strokeLinecap="round"
-            transform="rotate(-90 50 50)"
-            initial={{ strokeDashoffset: 264 }}
-            animate={{ strokeDashoffset: 264 - (264 * masteryLevel) / 100 }}
-            transition={{ duration: 1, ease: 'easeOut' }}
-          />
-        </svg>
-      )}
+      {/* Node with Progress Ring */}
+      <div className="relative w-24 h-24 flex items-center justify-center">
+        {isUnlocked && !isMastered && (
+          <svg className="absolute w-full h-full" viewBox="0 0 100 100">
+            <circle
+              className="stroke-gray-200"
+              strokeWidth="8"
+              cx="50"
+              cy="50"
+              r="42"
+              fill="transparent"
+            />
+            <motion.circle
+              className={progressRingColor}
+              strokeWidth="8"
+              cx="50"
+              cy="50"
+              r="42"
+              fill="transparent"
+              strokeDasharray="264"
+              strokeDashoffset={264 - (264 * masteryLevel) / 100}
+              strokeLinecap="round"
+              transform="rotate(-90 50 50)"
+              initial={{ strokeDashoffset: 264 }}
+              animate={{ strokeDashoffset: 264 - (264 * masteryLevel) / 100 }}
+              transition={{ duration: 1, ease: 'easeOut' }}
+            />
+          </svg>
+        )}
 
-      {/* Main Node */}
-      <div
-        className={`w-20 h-20 rounded-full flex items-center justify-center text-3xl
-                    bg-gradient-to-br shadow-lg transition-all duration-300
-                    ${statusColors[status]} ${!isUnlocked && 'opacity-70'}`}
-      >
-        {isMastered ? <Trophy /> : isUnlocked ? skill.icon : <Lock />}
+        {/* Main Node */}
+        <div
+          className={`w-20 h-20 rounded-full flex items-center justify-center text-3xl
+                      bg-gradient-to-br shadow-lg transition-all duration-300
+                      ${statusColors[status]} ${!isUnlocked && 'opacity-70'}`}
+        >
+          {isMastered ? <Trophy /> : isUnlocked ? <LucideIcon className="w-10 h-10" /> : <Lock />}
+        </div>
       </div>
 
       {/* Skill Name */}
@@ -121,13 +122,12 @@ const Connector: React.FC<{ isUnlocked: boolean }> = ({ isUnlocked }) => (
 
 const SkillTreeView: React.FC = () => {
   const { skillTree, loading, error, isSkillUnlocked, isSkillMastered, getSkillMasteryLevel } = useSkillTree();
-  const [selectedSkill, setSelectedSkill] = useState<any>(null);
+  const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
 
   const tiers = useMemo(() => {
     if (!skillTree.length) return [];
     const allSkills = skillTree.flatMap(cat => cat.skills || []);
-    const skillMap = new Map(allSkills.map(s => [s.id, s]));
-    const tiers: any[][] = [];
+    const tiers: Skill[][] = [];
 
     // This is a simplified tier calculation. A real implementation would need a proper graph traversal (e.g., topological sort).
     let currentTier = allSkills.filter(s => !s.prerequisites || s.prerequisites.length === 0);

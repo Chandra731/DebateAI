@@ -14,7 +14,6 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     // Implement search functionality
-    console.log('Search query:', searchQuery);
   };
 
   return (

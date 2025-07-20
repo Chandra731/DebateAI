@@ -10,12 +10,8 @@ import {
   Volume2, 
   VolumeX, 
   Play, 
-  Pause, 
   Square, 
-  Clock,
-  MessageSquare,
   Brain,
-  Trophy,
   AlertCircle
 } from 'lucide-react';
 
@@ -23,9 +19,6 @@ const LiveDebatePage: React.FC = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [debateStarted, setDebateStarted] = useState(false);
-  const [debatePhase, setDebatePhase] = useState('setup'); // setup, debate, results
-  const [currentRound, setCurrentRound] = useState(0);
-  const [isAISpeaking, setIsAISpeaking] = useState(false);
   const [currentSpeaker, setCurrentSpeaker] = useState<'user' | 'ai'>('user');
   const [timeRemaining, setTimeRemaining] = useState(180); // 3 minutes
   const [transcript, setTranscript] = useState<Array<{speaker: string, text: string, timestamp: string}>>([]);
@@ -48,7 +41,7 @@ const LiveDebatePage: React.FC = () => {
   const navigate = useNavigate();
   const { topics, loading: topicsLoading } = useTopics();
   const { profile } = useProfile();
-  const [selectedTopic, setSelectedTopic] = useState<any>(null);
+  const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
 
   const aiOpponent = profile ? getAiOpponentProfile(profile.level || 1) : getAiOpponentProfile(1);
 
@@ -58,7 +51,7 @@ const LiveDebatePage: React.FC = () => {
     }
 
     // Initialize Speech Recognition
-    const SpeechRecognition = window.SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognition = window.SpeechRecognition || (window as Window & typeof globalThis).webkitSpeechRecognition;
     if (SpeechRecognition) {
       // Request microphone permission
       navigator.mediaDevices.getUserMedia({ audio: true })
@@ -82,12 +75,9 @@ const LiveDebatePage: React.FC = () => {
               } 
             }
             finalTranscriptRef.current = finalTranscript;
-            console.log("Interim: ", interimTranscript);
-            console.log("Final: ", finalTranscript);
           };
 
           recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-            console.error("Speech recognition error:", event.error);
             setIsRecording(false);
             if (event.error === 'not-allowed' || event.error === 'permission-denied') {
               setMicrophonePermission(false);
@@ -95,17 +85,14 @@ const LiveDebatePage: React.FC = () => {
           };
 
           recognition.onend = () => {
-            console.log("Speech recognition ended.");
           };
 
           recognitionRef.current = recognition;
         })
         .catch((error) => {
-          console.error("Microphone access denied:", error);
           setMicrophonePermission(false);
         });
     } else {
-      console.warn("Web Speech API not supported in this browser.");
       setMicrophonePermission(false); // Treat as not allowed if API not supported
       // Optionally, show a message to the user
     }
@@ -150,8 +137,10 @@ const LiveDebatePage: React.FC = () => {
   ];
 
   const startDebate = async () => {
+    if (!user?.uid || !selectedTopic || !userSide) return; // Ensure user is logged in and topic/side selected
+
     const newDebate = await DatabaseService.createDebate({
-      user_id: 'user', // Replace with actual user ID
+      user_id: user.uid, 
       topic_id: selectedTopic.id,
       topic_title: selectedTopic.title,
       user_side: userSide,
@@ -161,8 +150,6 @@ const LiveDebatePage: React.FC = () => {
     });
     setDebateId(newDebate.id);
     setDebateStarted(true);
-    setDebatePhase('debate');
-    setCurrentRound(0);
     setCurrentSpeaker(debateRounds[0].speaker);
     setTimeRemaining(debateRounds[0].duration);
     setTranscript([]);
@@ -194,18 +181,6 @@ const LiveDebatePage: React.FC = () => {
         console.log("No speech detected.");
         // Optionally, show a message to the user that no speech was detected
       }
-    }
-  };
-
-  const speak = (text: string) => {
-    if ('speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.onend = () => {
-        setIsAISpeaking(false);
-        handleSpeechEnd();
-      };
-      window.speechSynthesis.speak(utterance);
-      setIsAISpeaking(true);
     }
   };
 
@@ -245,10 +220,15 @@ const LiveDebatePage: React.FC = () => {
 
   const endDebate = async () => {
     if (debateId) {
+      // Determine winner based on some logic (e.g., AI evaluation, user input)
+      // For now, let's assume user wins for demonstration purposes
+      const finalWinner = 'user'; 
+
       await DatabaseService.saveDebate(debateId, {
         status: 'completed',
         transcript: transcript,
-        winner: 'user', // Replace with actual winner
+        winner: finalWinner,
+        // Add user_score, ai_score, and feedback here if available from AI evaluation
       });
       navigate(`/app/debate-results/${debateId}`);
     }
@@ -306,7 +286,7 @@ const LiveDebatePage: React.FC = () => {
                   ))}
                 </div>
               ) : (
-                topics.map((topic) => (
+                topics.map((topic: Topic) => (
                   <button
                     key={topic.id}
                     onClick={() => {
@@ -552,7 +532,7 @@ const LiveDebatePage: React.FC = () => {
               </div>
               <div className="flex items-start space-x-2">
                 <AlertCircle className="w-4 h-4 text-accent-600 mt-0.5 flex-shrink-0" />
-                <span className="text-gray-700">Listen carefully to opponent's arguments for rebuttals</span>
+                <span className="text-gray-700">Listen carefully to opponent&apos;s arguments for rebuttals</span>
               </div>
               <div className="flex items-start space-x-2">
                 <AlertCircle className="w-4 h-4 text-accent-600 mt-0.5 flex-shrink-0" />

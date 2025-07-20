@@ -1,9 +1,15 @@
 import { useState, useEffect } from 'react';
 
+interface OfflineAction {
+  id: string;
+  url: string;
+  options: RequestInit;
+}
+
 // Free offline functionality hook
 export const useOffline = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [offlineActions, setOfflineActions] = useState<any[]>([]);
+  const [offlineActions, setOfflineActions] = useState<OfflineAction[]>([]);
 
   useEffect(() => {
     const handleOnline = () => {
@@ -25,7 +31,7 @@ export const useOffline = () => {
     };
   }, []);
 
-  const addOfflineAction = (action: any) => {
+  const addOfflineAction = (action: Omit<OfflineAction, 'id'>) => {
     const actionWithId = { ...action, id: Date.now().toString() };
     setOfflineActions(prev => [...prev, actionWithId]);
     
@@ -88,5 +94,9 @@ const storeOfflineAction = (action: OfflineAction) => {
     const transaction = db.transaction(['offline_actions'], 'readwrite');
     const store = transaction.objectStore('offline_actions');
     store.add(action);
+  };
+
+  request.onerror = (event) => {
+    console.error('IndexedDB request error:', (event.target as IDBRequest).error);
   };
 };

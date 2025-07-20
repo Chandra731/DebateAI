@@ -9,7 +9,6 @@ import {
   Trophy, 
   Target, 
   TrendingUp, 
-  Calendar,
   Award,
   Edit,
   Camera,
@@ -17,10 +16,11 @@ import {
   School,
   GraduationCap,
   Save,
-  X
+  X,
+  icons
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { Profile, Debate, Achievement, UserAchievement, LearningAnalytics } from '../types';
+import { Profile, Debate } from '../types';
 
 const ProfilePage: React.FC = () => {
   const { user, updateUser } = useAuth();
@@ -63,7 +63,7 @@ const ProfilePage: React.FC = () => {
         title: 'Profile Updated',
         message: 'Your profile has been successfully updated.'
       });
-    } catch (error) {
+    } catch {
       showNotification({
         type: 'error',
         title: 'Update Failed',
@@ -397,6 +397,7 @@ const ProfilePage: React.FC = () => {
                   {achievements && achievements.length > 0 && achievements.map((achievement) => {
                     const userAchievement = userAchievements?.find(ua => ua.achievement_id === achievement.id);
                     const isUnlocked = userAchievement?.unlocked_at;
+                    const IconComponent = icons[achievement.icon as keyof typeof icons] || Award; // Default to Award
                     
                     return (
                       <div 
@@ -408,7 +409,7 @@ const ProfilePage: React.FC = () => {
                         }`}
                       >
                         <div className="flex items-start space-x-3">
-                          <div className="text-3xl">{achievement.icon}</div>
+                          <div className="text-3xl"><IconComponent className="w-8 h-8" /></div>
                           <div className="flex-1">
                             <div className={`font-semibold ${
                               isUnlocked ? 'text-green-800' : 'text-gray-700'
@@ -489,4 +490,4 @@ const ProfilePage: React.FC = () => {
   );
 };
 
-export default ProfilePage
+export default ProfilePage;

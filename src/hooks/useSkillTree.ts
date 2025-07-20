@@ -1,23 +1,26 @@
 import { useState, useEffect, useCallback } from 'react';
-import { SkillTreeService, SkillCategory, UserSkillProgress, Lesson, Exercise, UserLearningGoals, LearningAnalytics } from '../services/skillTreeService';
+import { SkillTreeService } from '../services/skillTreeService';
+import type { SkillCategory, UserSkillProgress, Lesson, Exercise, UserLearningGoals, LearningAnalytics } from '../services/skillTreeService';
 import { useAuth } from '../contexts/AuthContext';
 import { logger } from '../utils/monitoring';
 
+
+
 export const useSkillTree = () => {
   const { user } = useAuth();
-  const [state, setState] = useState<{ 
+  const [state, setState] = useState<{
     skillTree: SkillCategory[];
     userProgress: UserSkillProgress[];
     userGoals: UserLearningGoals | null;
     loading: boolean;
     error: string | null;
     unlockedSkillIds: Set<string>;
-  }>({ 
-    skillTree: [], 
-    userProgress: [], 
-    userGoals: null, 
-    loading: true, 
-    error: null, 
+  }>({
+    skillTree: [],
+    userProgress: [],
+    userGoals: null,
+    loading: true,
+    error: null,
     unlockedSkillIds: new Set()
   });
 
@@ -53,41 +56,12 @@ export const useSkillTree = () => {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load skill tree data';
       setState(s => ({ ...s, error: errorMessage, loading: false }));
       logger.error(err as Error, { component: 'useSkillTree', action: 'loadSkillTreeData' });
-    } 
+    }
   }, [user?.uid]);
 
   useEffect(() => {
     loadSkillTreeData();
   }, [loadSkillTreeData]);
-
-  const getRecommendedLesson = useCallback((): Lesson | null => {
-    if (!state.skillTree.length || !state.userProgress.length || !state.userGoals?.goals.length) return null;
-
-    for (const goal of state.userGoals.goals) {
-      for (const category of state.skillTree) {
-        const skill = category.skills?.find(s => s.name.toLowerCase().includes(goal.toLowerCase()));
-        if (skill && !isSkillMastered(skill.id)) {
-          // Further logic needed here to get lessons for the skill
-        }
-      }
-    }
-    return null;
-  }, [state.skillTree, state.userProgress, state.userGoals]);
-
-  const unlockSkill = useCallback(async (skillId: string) => {
-    if (!user?.uid) return;
-
-    try {
-      const newProgress = await SkillTreeService.unlockSkill(user.uid, skillId);
-      if (newProgress) {
-        setState(s => ({ ...s, userProgress: [...s.userProgress.filter(p => p.skill_id !== skillId), newProgress]}));
-        loadSkillTreeData();
-      }
-    } catch (err) {
-      logger.error(err as Error, { component: 'useSkillTree', action: 'unlockSkill' });
-      throw err;
-    }
-  }, [user?.uid, loadSkillTreeData]);
 
   const getSkillProgress = useCallback((skillId: string): UserSkillProgress | null => {
     return state.userProgress.find(p => p.skill_id === skillId) || null;
@@ -106,6 +80,60 @@ export const useSkillTree = () => {
     const progress = getSkillProgress(skillId);
     return progress?.mastery_level || 0;
   }, [getSkillProgress]);
+
+  const findFirstUncompletedLesson = useCallback(async (userId: string, lessons: Lesson[]): Promise<Lesson | null> => {
+    const completedLessons = await SkillTreeService.getUserLessonCompletions(userId);
+    const completedLessonIds = new Set(completedLessons.map(c => c.lesson_id));
+    return lessons.find(lesson => !completedLessonIds.has(lesson.id)) || null;
+  }, []);
+
+  const getRecommendedLesson = useCallback(async (): Promise<Lesson | null> => {
+    if (!user?.uid || !state.skillTree.length || !state.userGoals?.goals.length) return null;
+
+    const allSkills = state.skillTree.flatMap(cat => cat.skills || []);
+    const unlockedSkills = allSkills.filter(skill => isSkillUnlocked(skill.id) && !isSkillMastered(skill.id));
+
+    // 1. Prioritize skills matching user goals
+    for (const goal of state.userGoals.goals) {
+      const goalRegex = new RegExp(goal.replace(/[^a-zA-Z0-9 ]/g, ''), 'i'); // Sanitize goal for regex
+      for (const skill of unlockedSkills) {
+        if (goalRegex.test(skill.name) || goalRegex.test(skill.description)) {
+          const lessons = await SkillTreeService.getSkillLessons(skill.id);
+          const firstUncompletedLesson = await findFirstUncompletedLesson(user.uid, lessons);
+          if (firstUncompletedLesson) return firstUncompletedLesson;
+        }
+      }
+    }
+
+    // 2. If no goal-related lessons, find the next lesson in the lowest-difficulty unlocked skill
+    const sortedSkills = unlockedSkills.sort((a, b) => {
+      const difficultyOrder = { 'beginner': 1, 'intermediate': 2, 'advanced': 3 };
+      return difficultyOrder[a.difficulty_level] - difficultyOrder[b.difficulty_level];
+    });
+
+    for (const skill of sortedSkills) {
+      const lessons = await SkillTreeService.getSkillLessons(skill.id);
+      const firstUncompletedLesson = await findFirstUncompletedLesson(user.uid, lessons);
+      if (firstUncompletedLesson) return firstUncompletedLesson;
+    }
+
+    return null;
+  }, [user?.uid, state.skillTree, state.userGoals, isSkillUnlocked, isSkillMastered, findFirstUncompletedLesson]);
+
+  const unlockSkill = useCallback(async (skillId: string) => {
+    if (!user?.uid) return;
+
+    try {
+      const newProgress = await SkillTreeService.unlockSkill(user.uid, skillId);
+      if (newProgress) {
+        setState(s => ({ ...s, userProgress: [...s.userProgress.filter(p => p.skill_id !== skillId), newProgress]}));
+        loadSkillTreeData();
+      }
+    } catch (err) {
+      logger.error(err as Error, { component: 'useSkillTree', action: 'unlockSkill' });
+      throw err;
+    }
+  }, [user?.uid, loadSkillTreeData]);
 
   return {
     ...state,
@@ -141,7 +169,7 @@ export const useSkillLessons = (skillId: string, isUnlocked: boolean) => {
             const structuredContent = await SkillTreeService.generateStructuredLessonContent(
               lesson.id,
               lesson.title,
-              lesson.learning_objectives
+              lesson.learning_objects
             );
             return { ...lesson, content: structuredContent };
           } else {
@@ -159,7 +187,7 @@ export const useSkillLessons = (skillId: string, isUnlocked: boolean) => {
     };
 
     loadLessons();
-  }, [skillId]);
+  }, [skillId, isUnlocked]);
 
   return { lessons, loading, error };
 };
@@ -181,15 +209,38 @@ export const useLesson = (lessonId: string) => {
         setError(null);
         const fetchedLesson = await SkillTreeService.getLesson(lessonId);
 
-        if (fetchedLesson && (!fetchedLesson.content || fetchedLesson.content.length === 0)) {
-          const structuredContent = await SkillTreeService.generateStructuredLessonContent(
-            fetchedLesson.id,
-            fetchedLesson.title,
-            fetchedLesson.learning_objectives
-          );
-          setLesson({ ...fetchedLesson, content: structuredContent });
+        if (fetchedLesson) {
+          // If content is missing, generate it first.
+          if (!fetchedLesson.content || fetchedLesson.content.length === 0) {
+            const structuredContent = await SkillTreeService.generateStructuredLessonContent(
+              fetchedLesson.id,
+              fetchedLesson.title,
+              fetchedLesson.learning_objects
+            );
+            fetchedLesson.content = structuredContent;
+          }
+
+          // Now, clean the content regardless of whether it was just generated or fetched.
+          const cleanedContent = fetchedLesson.content.map(section => {
+            if (section.type === 'quiz' && section.quiz) {
+              const cleanedQuiz = section.quiz.map(q => {
+                const correctAnswer = (typeof q.correct_answer === 'string')
+                  ? q.correct_answer
+                  : (q.correct_answer as string)?.selected_option;
+
+                return { ...q, correct_answer: correctAnswer || '' };
+              });
+              return { ...section, quiz: cleanedQuiz };
+            } else if (section.type === 'text' && section.content) {
+              return { ...section, content: section.content };
+            }
+            return section;
+          });
+
+          setLesson({ ...fetchedLesson, content: cleanedContent });
+
         } else {
-          setLesson(fetchedLesson);
+          setLesson(null);
         }
 
       } catch (err) {

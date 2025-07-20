@@ -21,7 +21,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
-  const { user, profile, logout } = useAuth();
+  const { profile, logout } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -29,7 +29,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       await logout();
       navigate('/');
     } catch (error) {
-      console.error('Logout error:', error);
+      // Error handling for logout can be done via notifications if needed
     }
   };
 
@@ -46,7 +46,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     navItems.push({ icon: Settings, label: 'Admin', path: '/app/admin' });
   }
 
-  const NavItem = ({ item }: { item: { path: string; label: string; icon: React.ElementType } }) => (
+  const NavItem: React.FC<{ item: { path: string; label: string; icon: React.ElementType } }> = ({ item }) => (
     <NavLink
       to={item.path}
       onClick={onClose}

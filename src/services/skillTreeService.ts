@@ -1,12 +1,25 @@
 import { db } from '../lib/firebase';
-import { collection, doc, getDoc, getDocs, query, where, orderBy, setDoc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where, orderBy, setDoc, updateDoc, QueryConstraint } from 'firebase/firestore';
 import { GroqService } from './groqService';
 import { logger } from '../utils/monitoring';
 import { DatabaseService } from './database';
-import { SkillCategory, Skill, UserSkillProgress, Lesson, LessonSection, QuizQuestion, Exercise, ExerciseAttempt, AIFeedback, MiniLesson, Quiz, UserLearningGoals } from '../types';
+import { 
+  SkillCategory, 
+  Skill, 
+  UserSkillProgress, 
+  Lesson, 
+  LessonSection, 
+  Exercise, 
+  ExerciseAttempt, 
+  AIFeedback, 
+  UserLearningGoals, 
+  UserLessonCompletion, 
+  UserReviewSchedule, 
+  Prerequisite
+} from '../types';
 
 export class SkillTreeService {
-  private static async _getData<T>(collectionName: string, ...queryConstraints: any[]): Promise<T[]> {
+  private static async _getData<T>(collectionName: string, ...queryConstraints: QueryConstraint[]): Promise<T[]> {
     try {
       const q = query(collection(db, collectionName), ...queryConstraints);
       const querySnapshot = await getDocs(q);
@@ -44,7 +57,7 @@ export class SkillTreeService {
     for (const category of categories) {
       const skills = await this._getData<Skill>(`skill_categories/${category.id}/skills`, where('is_active', '==', true), orderBy('display_order'));
       for (const skill of skills) {
-        skill.prerequisites = await this._getData('skill_dependencies', where('skill_id', '==', skill.id));
+        skill.prerequisites = await this._getData<Prerequisite>('skill_dependencies', where('skill_id', '==', skill.id));
       }
       category.skills = skills;
     }
@@ -75,13 +88,24 @@ export class SkillTreeService {
 
         For 'text' sections:
         - 'title': A concise title for the section.
-        - 'content': The instructional text for the section. Use Markdown for formatting (e.g., **bold**, *italics*, lists).
+        - 'content': The instructional text for the section. Use standard Markdown for formatting, including headings (##, ###), bullet points (* or -), and numbered lists (1., 2.). Ensure proper newlines for readability. For example:
+          \`\`\`markdown
+          ## My Heading
+          
+          This is a paragraph.
+          
+          * Item 1
+          * Item 2
+          
+          1. First point
+          2. Second point
+          \`\`\`
 
         For 'quiz' sections:
         - 'quiz': An array of 5 or more QuizQuestion objects. Each QuizQuestion object should have:
           - 'question': A multiple-choice question to test understanding of the preceding text sections.
           - 'options': An array of 3-4 possible answers.
-          - 'correct_answer': The exact text of the correct option.
+          - 'correct_answer': The exact text of the correct option. THIS MUST BE A STRING, NOT AN OBJECT.
 
         Ensure that:
         - The lesson flows logically.
@@ -148,7 +172,7 @@ export class SkillTreeService {
         }
 
         // 3. Clean up the extracted string from control characters
-        jsonString = jsonString.replace(/[\u0000-\u001F\u007F-\u009F]/g, "");
+        jsonString = jsonString.replace(/[\000-\037\177-\237]/g, "");
         
         // 4. Attempt to parse
         structuredContent = JSON.parse(jsonString);
@@ -179,7 +203,6 @@ export class SkillTreeService {
     try {
       const canUnlock = await this.checkSkillPrerequisites(userId, skillId);
       if (!canUnlock) {
-        logger.warn(`Prerequisites not met for skill ${skillId} for user ${userId}.`);
         return null;
       }
 
@@ -253,8 +276,12 @@ export class SkillTreeService {
     return this._getData<Exercise>('exercises', where('lesson_id', '==', lessonId), where('is_active', '==', true), orderBy('display_order'));
   }
 
-  static async getUserLessonCompletions(userId: string, skillId: string): Promise<any[]> {
-    return this._getData('user_lesson_completions', where('user_id', '==', userId));
+  static async getUserLessonCompletions(userId: string): Promise<UserLessonCompletion[]> {
+    return this._getData<UserLessonCompletion>('user_lesson_completions', where('user_id', '==', userId));
+  }
+
+  static async getUserExerciseAttempts(userId: string): Promise<ExerciseAttempt[]> {
+    return this._getData<ExerciseAttempt>('user_exercise_attempts', where('user_id', '==', userId));
   }
 
   static async completeLesson(
@@ -295,7 +322,7 @@ export class SkillTreeService {
   static async submitExerciseAttempt(
     userId: string,
     exerciseId: string,
-    userAnswer: any,
+    userAnswer: ExerciseAttempt['user_answer'],
     timeSpent: number
   ): Promise<{ attempt: ExerciseAttempt; feedback: AIFeedback }> {
     try {
@@ -334,82 +361,74 @@ export class SkillTreeService {
     }
   }
 
-  static async evaluateExerciseAnswer(exercise: Exercise, userAnswer: any): Promise<AIFeedback> {
+  static async evaluateExerciseAnswer(exercise: Exercise, userAnswer: ExerciseAttempt['user_answer']): Promise<AIFeedback> {
     try {
-      let promptContext = '';
+      // 1. Handle simple multiple-choice questions without AI
       if (exercise.type === 'mcq') {
-        promptContext = `
-          **Question:** ${exercise.content.question}
-          **Options:** ${JSON.stringify(exercise.content.options, null, 2)}
-          **Correct Answer:** "${exercise.correct_answer}"
-        `;
+        const correctAnswer = (exercise.correct_answer as { selected_option: string })?.selected_option;
+        const userAnswerOption = (userAnswer as { selected_option: string })?.selected_option;
+        
+        if (!correctAnswer) {
+          throw new Error(`Correct answer not defined for MCQ exercise: ${exercise.id}`);
+        }
+
+        const isCorrect = correctAnswer === userAnswerOption;
+
+        return {
+          verdict: isCorrect ? 'correct' : 'incorrect',
+          explanation: isCorrect 
+            ? `Correct! The answer is indeed "${correctAnswer}".`
+            : `Not quite. The correct answer is "${correctAnswer}". You selected "${userAnswerOption}".`,
+          improvement_advice: isCorrect ? [] : ['Review the lesson material on this topic to better understand the key concepts.'],
+          skill_score: isCorrect ? 100 : 0,
+          unlock_next_skill: isCorrect,
+        };
       }
 
-      const prompt = `
-        Please evaluate the following exercise submission for a debate training platform.
+      // 2. For more complex types, use a structured AI evaluation
+      const systemPrompt = `
+        You are an expert debate coach providing feedback on a user's exercise submission.
+        Analyze the user's answer based on the provided exercise details and return a JSON object with the following structure:
+        { 
+          "verdict": "correct" | "partial" | "incorrect",
+          "explanation": "A detailed explanation of why the user's answer is correct, partial, or incorrect. Refer to specific parts of their answer.",
+          "improvement_advice": ["A list of 2-3 actionable tips for improvement."],
+          "skill_score": A score from 0 to 100 representing mastery of the targeted skill.
+        }
+        Ensure your response is ONLY the JSON object.`;
 
-        **Exercise Details:**
+      const userPrompt = `
+        Please evaluate the following exercise submission:
+        
+        ## Exercise Details:
         - **Title:** ${exercise.title}
         - **Type:** ${exercise.type}
-        - **Learning Objectives:** ${exercise.ai_evaluation_prompt}
-        ${promptContext}
+        - **Instructions:** ${exercise.content.prompt || 'N/A'}
+        - **Evaluation Criteria:** ${exercise.ai_evaluation_prompt}
 
-        **User's Submission:**
+        ## User's Submission:
         ${JSON.stringify(userAnswer, null, 2)}
-
-        **Evaluation Criteria:**
-        - **Correctness:** Based on the provided "Correct Answer", is the user's submission accurate?
-        - **Reasoning:** Provide a clear explanation for why the user is correct or incorrect.
-
-        **Output Format:**
-        Please provide your evaluation in a JSON object with the following structure:
-        {
-          "verdict": "correct" | "incorrect",
-          "explanation": "A detailed explanation of why the user's answer is correct or incorrect, referencing the provided correct answer.",
-          "improvement_advice": ["Specific, actionable tips for improvement if the answer is incorrect."],
-          "skill_score": A score from 0 to 100. Give 100 for a correct answer and less for an incorrect one.",
-          "mini_lessons": []
-        }
       `;
 
-      const systemPrompt = "You are an expert debate coach and judge. Your role is to provide clear, constructive, and encouraging feedback to students learning about debate by comparing their answer to the correct answer provided.";
-      const aiResponse = await GroqService.getCompletion(prompt, systemPrompt);
-      
-      let feedback: AIFeedback;
-      try {
-        // Enhanced JSON extraction logic
-        let jsonString = aiResponse as string;
+      const aiResponse = await GroqService.getCompletion(userPrompt, systemPrompt);
 
-        // 1. Try to find JSON within markdown code blocks
-        const jsonMatch = jsonString.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-        if (jsonMatch && jsonMatch[1]) {
-          jsonString = jsonMatch[1];
-        } else {
-          // 2. If no code block, find the first '{' and the last '}'
-          const firstBrace = jsonString.indexOf('{');
-          if (firstBrace !== -1) {
-            const lastBrace = jsonString.lastIndexOf('}');
-            if (lastBrace > firstBrace) {
-              jsonString = jsonString.substring(firstBrace, lastBrace + 1);
-            }
-          }
-        }
-
-        // 3. Clean up the extracted string from control characters
-        jsonString = jsonString.replace(/[\u0000-\u001F\u007F-\u009F]/g, "");
-
-        // 4. Attempt to parse
-        feedback = JSON.parse(jsonString);
-
-      } catch (e) {
-        logger.error(new Error("Failed to parse AI response."), {
-          component: 'SkillTreeService',
-          action: 'evaluateExerciseAnswer',
-          rawResponse: aiResponse,
-          parseError: e,
-        });
-        throw new Error("The AI's response was not in the expected format. Please try again.");
+      if (typeof aiResponse === 'string') {
+        // If the response is a string, it means parsing failed or it's a mock response.
+        // We'll try to handle it gracefully, but this indicates an issue.
+        logger.warn('AI response for exercise evaluation was a string, not an object.', { exerciseId: exercise.id, response: aiResponse });
+        // Attempt to create a partial feedback object
+        return {
+          verdict: 'partial',
+          explanation: aiResponse, // Use the string response as the explanation
+          improvement_advice: ['The AI evaluation may not have completed correctly. Please review your answer and try again.'],
+          skill_score: 50, // Assign a neutral score
+          unlock_next_skill: false,
+        };
       }
+
+      // Assuming aiResponse is ExerciseEvaluation
+      const feedback = aiResponse as AIFeedback;
+      feedback.unlock_next_skill = feedback.verdict === 'correct' && feedback.skill_score >= (exercise.passing_score || 80);
 
       return feedback;
 
@@ -417,21 +436,45 @@ export class SkillTreeService {
       logger.error(error as Error, { component: 'SkillTreeService', action: 'evaluateExerciseAnswer' });
       
       return {
-        verdict: 'partial',
-        explanation: 'Unable to fully evaluate your answer at the moment. Please try again later.',
+        verdict: 'partial', // Use 'partial' to indicate an error state
+        explanation: 'An unexpected error occurred while evaluating your answer. Please try again later.',
         improvement_advice: ['Check your internet connection and try submitting again.'],
-        skill_score: 50,
+        skill_score: 0, // No score on error
         unlock_next_skill: false
       };
     }
   }
 
-  static async getFeedbackTemplate(exerciseType: string, score: number): Promise<any> {
-    return this._getDoc('ai_feedback_templates', `where('exercise_type', '==', exerciseType), where('score_range_min', '<=', score), where('score_range_max', '>=', score)`);
+  static async getFeedbackTemplate(): Promise<AIFeedback | null> {
+    return this._getDoc<AIFeedback>('ai_feedback_templates', 'default');
   }
 
-  static async getUserReviewSchedule(userId: string): Promise<any[]> {
-    return this._getData('user_review_schedule', where('user_id', '==', userId), where('review_at', '<=', new Date().toISOString()), orderBy('review_at'));
+  static async getUserReviewSchedule(userId: string): Promise<UserReviewSchedule[]> {
+    const reviewItems = await this._getData<UserReviewSchedule>('user_review_schedule', where('user_id', '==', userId), where('review_at', '<=', new Date().toISOString()), orderBy('review_at'));
+
+    // Fetch skill names for each review item
+    const itemsWithSkillNames = await Promise.all(reviewItems.map(async (item) => {
+      // Determine if it's a lesson or exercise to find the associated skill
+      let skillId: string | undefined;
+      if (item.item_type === 'lesson') {
+        const lesson = await this._getDoc<Lesson>('lessons', item.item_id);
+        skillId = lesson?.skill_id;
+      } else if (item.item_type === 'exercise') {
+        const exercise = await this._getDoc<Exercise>('exercises', item.item_id);
+        if (exercise) {
+          const lesson = await this._getDoc<Lesson>('lessons', exercise.lesson_id);
+          skillId = lesson?.skill_id;
+        }
+      }
+
+      if (skillId) {
+        const skillWithCategory = await this.getSkillWithCategory(skillId);
+        return { ...item, skill_name: skillWithCategory?.skill.name || 'Unknown Skill' };
+      }
+      return { ...item, skill_name: 'Unknown Skill' };
+    }));
+
+    return itemsWithSkillNames;
   }
 
   static async updateSkillProgress(userId: string, itemId: string, itemType: 'lesson' | 'exercise'): Promise<{ masteryAchieved: boolean }> {
@@ -450,7 +493,6 @@ export class SkillTreeService {
       }
 
       if (!skillId) {
-        logger.warn('Could not determine skillId to update progress.', { itemId, itemType });
         return { masteryAchieved: false };
       }
 
@@ -464,9 +506,9 @@ export class SkillTreeService {
       const allExercises = (await Promise.all(allLessons.map(l => this.getLessonExercises(l.id)))).flat();
       const totalItems = allLessons.length + allExercises.length;
 
-      const completedLessons = await this._getData('user_lesson_completions', where('user_id', '==', userId));
+      const completedLessons = await this._getData<UserLessonCompletion>('user_lesson_completions', where('user_id', '==', userId));
       const completedLessonIds = new Set(completedLessons.map(d => d.lesson_id));
-      const completedExercises = await this._getData('user_exercise_attempts', where('user_id', '==', userId), where('is_correct', '==', true));
+      const completedExercises = await this._getData<ExerciseAttempt>('user_exercise_attempts', where('user_id', '==', userId), where('is_correct', '==', true));
       const completedExerciseIds = new Set(completedExercises.map(d => d.exercise_id));
 
       const completedLessonsForSkill = allLessons.filter(l => completedLessonIds.has(l.id)).length;
@@ -502,7 +544,7 @@ export class SkillTreeService {
 
   static async unlockDependentSkills(userId: string, masteredSkillId: string): Promise<void> {
     try {
-      const dependentSkills = await this._getData<{ skill_id: string }>('skill_dependencies', where('prerequisite_skill_id', '==', masteredSkillId));
+      const dependentSkills = await this._getData<{ prerequisite_skill_id: string }>('skill_dependencies', where('prerequisite_skill_id', '==', masteredSkillId));
 
       for (const dep of dependentSkills) {
         const canUnlock = await this.checkSkillPrerequisites(userId, dep.skill_id, masteredSkillId);
@@ -515,10 +557,10 @@ export class SkillTreeService {
     }
   }
 
-  static async getUserLearningAnalytics(userId: string): Promise<any> {
+  static async getUserLearningAnalytics(userId: string): Promise<UserLearningAnalytics> {
     try {
       const progress = await this.getUserSkillProgress(userId);
-      const completions = await this.getUserLessonCompletions(userId, '*');
+      const completions = await this.getUserLessonCompletions(userId);
       const attempts = await this._getData<ExerciseAttempt>('user_exercise_attempts', where('user_id', '==', userId));
 
       const progressWithSkills = await Promise.all(progress.map(async (p) => {

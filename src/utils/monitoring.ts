@@ -8,7 +8,7 @@ interface ErrorContext {
 
 class FreeLogger {
   private static instance: FreeLogger;
-  private logs: any[] = [];
+  private logs: LogEntry[] = [];
   private maxLogs = 100; // Keep only last 100 logs
   
   static getInstance(): FreeLogger {
@@ -19,7 +19,7 @@ class FreeLogger {
   }
 
   error(error: Error, context?: ErrorContext) {
-    const errorData = {
+    const errorData: LogEntry = {
       level: 'error',
       message: error.message,
       stack: error.stack,
@@ -42,7 +42,7 @@ class FreeLogger {
   }
 
   warn(message: string, context?: ErrorContext) {
-    const logData = {
+    const logData: LogEntry = {
       level: 'warn',
       message,
       timestamp: new Date().toISOString(),
@@ -54,7 +54,7 @@ class FreeLogger {
   }
 
   info(message: string, context?: ErrorContext) {
-    const logData = {
+    const logData: LogEntry = {
       level: 'info',
       message,
       timestamp: new Date().toISOString(),
@@ -66,7 +66,7 @@ class FreeLogger {
   }
 
   // Get logs for debugging
-  getLogs() {
+  getLogs(): LogEntry[] {
     return this.logs;
   }
 
@@ -83,7 +83,7 @@ class FreeLogger {
     URL.revokeObjectURL(url);
   }
 
-  private addToMemoryLog(logData: any) {
+  private addToMemoryLog(logData: LogEntry) {
     this.logs.push(logData);
     if (this.logs.length > this.maxLogs) {
       this.logs.shift(); // Remove oldest log
@@ -104,9 +104,9 @@ class FreeLogger {
     );
   }
 
-  private storeCriticalError(errorData: any) {
+  private storeCriticalError(errorData: LogEntry) {
     try {
-      const criticalErrors = JSON.parse(
+      const criticalErrors: LogEntry[] = JSON.parse(
         localStorage.getItem('critical_errors') || '[]'
       );
       criticalErrors.push(errorData);
@@ -172,24 +172,26 @@ export const performanceMonitor = {
   }
 };
 
+interface AnalyticsEvent {
+  event: string;
+  properties: Record<string, any>;
+}
+
 // Free analytics using localStorage and console
 export const freeAnalytics = {
   track: (event: string, properties?: Record<string, any>) => {
-    const eventData = {
+    const eventData: AnalyticsEvent = {
       event,
       properties: {
         timestamp: new Date().toISOString(),
         page: window.location.pathname,
-        sessionId: this.getSessionId(),
+        sessionId: freeAnalytics.getSessionId(),
         ...properties
       }
     };
 
-    // Log to console for debugging
-    console.log('📊 Analytics event:', eventData);
-    
     // Store in localStorage for basic analytics
-    this.storeEvent(eventData);
+    freeAnalytics.storeEvent(eventData);
   },
 
   page: (pageName: string) => {
@@ -197,7 +199,6 @@ export const freeAnalytics = {
   },
 
   user: (userId: string, traits?: Record<string, any>) => {
-    console.log('👤 User identified:', { userId, traits });
     localStorage.setItem('analytics_user', JSON.stringify({ userId, traits }));
   },
 
@@ -210,9 +211,9 @@ export const freeAnalytics = {
     return sessionId;
   },
 
-  storeEvent: (eventData: any) => {
+  storeEvent: (eventData: AnalyticsEvent) => {
     try {
-      const events = JSON.parse(localStorage.getItem('analytics_events') || '[]');
+      const events: AnalyticsEvent[] = JSON.parse(localStorage.getItem('analytics_events') || '[]');
       events.push(eventData);
       
       // Keep only last 100 events
@@ -227,7 +228,7 @@ export const freeAnalytics = {
   },
 
   exportAnalytics: () => {
-    const events = JSON.parse(localStorage.getItem('analytics_events') || '[]');
+    const events: AnalyticsEvent[] = JSON.parse(localStorage.getItem('analytics_events') || '[]');
     const analyticsBlob = new Blob([JSON.stringify(events, null, 2)], {
       type: 'application/json'
     });
@@ -265,7 +266,7 @@ export const healthCheck = {
   },
 
   checkPerformance: () => {
-    const memory = (performance as any).memory;
+    const memory = (performance as Performance & { memory?: any }).memory;
     if (memory) {
       const memoryInfo = {
         used: Math.round(memory.usedJSHeapSize / 1048576), // MB

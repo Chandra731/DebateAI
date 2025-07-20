@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, Play, BookOpen, Target, Clock, Star, Trophy, Lock, BrainCircuit } from 'lucide-react';
+import { X, BookOpen, Trophy, BrainCircuit, CheckCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useSkillLessons, useLessonExercises } from '../../hooks/useSkillTree';
+import { useSkillLessons } from '../../hooks/useSkillTree';
 import { useAuth } from '../../contexts/AuthContext';
-import { SkillTreeService, Exercise } from '../../services/skillTreeService';
+import { SkillTreeService, Exercise, Lesson, UserLessonCompletion, ExerciseAttempt } from '../../services/skillTreeService';
 import LoadingSpinner from '../common/LoadingSpinner';
 import Button from '../common/Button';
 
 interface SkillModalProps {
-  skill: any;
+  skill: Skill;
   isOpen: boolean;
   onClose: () => void;
   isUnlocked: boolean;
@@ -21,16 +21,22 @@ const SkillModal: React.FC<SkillModalProps> = ({ skill, isOpen, onClose, isUnloc
   const { lessons, loading: lessonsLoading } = useSkillLessons(skill.id, isUnlocked);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [loadingExercises, setLoadingExercises] = useState(false);
-  const [completedItems, setCompletedItems] = useState<Set<string>>(new Set());
+  const [completedLessons, setCompletedLessons] = useState<Set<string>>(new Set());
+  const [completedExercises, setCompletedExercises] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const fetchInitialData = async () => {
       if (user?.uid && isUnlocked) {
-        // Fetch completed lessons and exercises
+        const [lessonCompletions, exerciseAttempts] = await Promise.all([
+          SkillTreeService.getUserLessonCompletions(user.uid),
+          SkillTreeService.getUserExerciseAttempts(user.uid),
+        ]);
+        setCompletedLessons(new Set(lessonCompletions.map(c => c.lesson_id)));
+        setCompletedExercises(new Set(exerciseAttempts.filter(a => a.is_correct).map(a => a.exercise_id)));
       }
     };
     fetchInitialData();
-  }, [user?.uid, skill.id, isUnlocked]);
+  }, [user?.uid, isUnlocked]);
 
   useEffect(() => {
     const fetchExercises = async () => {
@@ -48,7 +54,7 @@ const SkillModal: React.FC<SkillModalProps> = ({ skill, isOpen, onClose, isUnloc
 
   if (!isOpen) return null;
 
-  const handleStartLesson = (lesson: any) => {
+  const handleStartLesson = (lesson: Lesson) => {
     onClose();
     navigate(`/app/skills/${skill.id}/lessons/${lesson.id}`);
   };
@@ -77,7 +83,6 @@ const SkillModal: React.FC<SkillModalProps> = ({ skill, isOpen, onClose, isUnloc
         <div className="bg-gradient-to-r from-primary-500 to-secondary-500 text-white p-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <div className="text-4xl">{skill.icon}</div>
               <div>
                 <h2 className="text-2xl font-bold">{skill.name}</h2>
                 <p className="text-primary-100">{skill.description}</p>
@@ -120,7 +125,7 @@ const SkillModal: React.FC<SkillModalProps> = ({ skill, isOpen, onClose, isUnloc
                         >
                           <div className="flex items-start">
                             <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 font-semibold text-sm mr-3 flex-shrink-0">
-                              {index + 1}
+                              {completedLessons.has(lesson.id) ? <CheckCircle className="w-5 h-5" /> : index + 1}
                             </div>
                             <div>
                               <p className="font-semibold text-gray-800">{lesson.title}</p>
@@ -154,7 +159,7 @@ const SkillModal: React.FC<SkillModalProps> = ({ skill, isOpen, onClose, isUnloc
                         >
                           <div className="flex items-start">
                             <div className="w-8 h-8 bg-secondary-100 rounded-full flex items-center justify-center text-secondary-600 font-semibold text-sm mr-3 flex-shrink-0">
-                              <Trophy className="w-4 h-4" />
+                              {completedExercises.has(exercise.id) ? <CheckCircle className="w-5 h-5" /> : <Trophy className="w-4 h-4" />}
                             </div>
                             <div>
                               <p className="font-semibold text-gray-800">{exercise.title}</p>
