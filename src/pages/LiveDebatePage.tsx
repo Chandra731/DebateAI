@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTopics, useProfile } from '../hooks/useDatabase';
+import { useAuth } from '../contexts/AuthContext';
 import { getAiOpponentProfile } from '../config/aiOpponents';
 import { GroqService } from '../services/groqService';
 import { DatabaseService } from '../services/database';
@@ -25,6 +26,7 @@ const LiveDebatePage: React.FC = () => {
   const [aiThinking, setAiThinking] = useState(false);
   const [customTopic, setCustomTopic] = useState('');
   const [userSide, setUserSide] = useState<'pro' | 'con' | null>(null);
+  const [aiOpponent, setAiOpponent] = useState<any>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const finalTranscriptRef = useRef('');
   const [microphonePermission, setMicrophonePermission] = useState<boolean | null>(null);
@@ -41,9 +43,16 @@ const LiveDebatePage: React.FC = () => {
   const navigate = useNavigate();
   const { topics, loading: topicsLoading } = useTopics();
   const { profile } = useProfile();
+  const { user } = useAuth();
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
 
-  const aiOpponent = profile ? getAiOpponentProfile(profile.level || 1) : getAiOpponentProfile(1);
+  
+
+  useEffect(() => {
+    if (profile) {
+      setAiOpponent(getAiOpponentProfile(profile.level || 1));
+    }
+  }, [profile]);
 
   useEffect(() => {
     if (!topicsLoading && topics.length > 0 && !selectedTopic) {
@@ -358,28 +367,30 @@ const LiveDebatePage: React.FC = () => {
         </div>
 
         {/* AI Opponent Preview */}
-        <div className="bg-gradient-to-r from-secondary-50 to-primary-50 rounded-xl p-6 border border-secondary-200">
-          <div className="flex items-center space-x-4">
-            <div className="w-16 h-16 bg-gradient-to-r from-secondary-500 to-primary-500 rounded-full flex items-center justify-center">
-              <Brain className="w-8 h-8 text-white" />
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Your AI Opponent</h3>
-              <p className="text-gray-600">{aiOpponent.level} • Specializes in {aiOpponent.specialization}</p>
-              <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
-                <span>🏆 Win Rate: {aiOpponent.winRate}</span>
-                <span>🎯 Argument Strength: {aiOpponent.argumentStrength}</span>
-                <span>⚡ Response Speed: {aiOpponent.responseSpeed}</span>
+        {user && profile && aiOpponent && (
+          <div className="bg-gradient-to-r from-secondary-50 to-primary-50 rounded-xl p-6 border border-secondary-200">
+            <div className="flex items-center space-x-4">
+              <div className="w-16 h-16 bg-gradient-to-r from-secondary-500 to-primary-500 rounded-full flex items-center justify-center">
+                <Brain className="w-8 h-8 text-white" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Your AI Opponent</h3>
+                <p className="text-gray-600">{aiOpponent.level} • Specializes in {aiOpponent.specialization}</p>
+                <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
+                  <span>🏆 Win Rate: {aiOpponent.winRate}</span>
+                  <span>🎯 Argument Strength: {aiOpponent.argumentStrength}</span>
+                  <span>⚡ Response Speed: {aiOpponent.responseSpeed}</span>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Start Button */}
         <div className="text-center">
           <button
             onClick={startDebate}
-            disabled={!selectedTopic || !userSide || microphonePermission === false || microphonePermission === null}
+            disabled={!user?.uid || !selectedTopic || !userSide || microphonePermission === false || microphonePermission === null}
             className="bg-primary-600 text-white px-8 py-4 rounded-xl hover:bg-primary-700 transition-colors text-lg font-semibold flex items-center space-x-3 mx-auto disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Play className="w-6 h-6" />

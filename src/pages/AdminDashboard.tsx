@@ -20,7 +20,6 @@ import {
   PlusCircle,
   Edit,
   Trash2,
-  Download,
   Search,
   ShieldCheck,
   ShieldOff
