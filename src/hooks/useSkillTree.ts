@@ -4,7 +4,17 @@ import type { SkillCategory, UserSkillProgress, Lesson, Exercise, UserLearningGo
 import { useAuth } from '../contexts/AuthContext';
 import { logger } from '../utils/monitoring';
 
+const cleanMarkdown = (text: string): string => {
+  let cleanedText = text;
 
+  // 1. Ensure newlines before headings
+  cleanedText = cleanedText.replace(/([^\n])(#+)/g, '$1\n$2');
+
+  // 2. Normalize multiple newlines to single newlines
+  cleanedText = cleanedText.replace(/\n{2,}/g, '\n');
+
+  return cleanedText.trim();
+};
 
 export const useSkillTree = () => {
   const { user } = useAuth();
@@ -15,7 +25,7 @@ export const useSkillTree = () => {
     loading: boolean;
     error: string | null;
     unlockedSkillIds: Set<string>;
-  }>({
+  }> ({
     skillTree: [],
     userProgress: [],
     userGoals: null,
@@ -41,11 +51,9 @@ export const useSkillTree = () => {
           const canUnlock = await SkillTreeService.checkSkillPrerequisites(user.uid, skill.id);
           if (canUnlock) {
             unlocked.add(skill.id);
-          } else {
-            const isFirstSkill = !skill.prerequisites || skill.prerequisites.length === 0;
-            if (isFirstSkill) {
-              unlocked.add(skill.id);
-            }
+          } else if (!skill.prerequisites || skill.prerequisites.length === 0) {
+            // If a skill has no prerequisites, it's a starting skill and should be unlocked by default.
+            unlocked.add(skill.id);
           }
         }
       }
@@ -98,7 +106,7 @@ export const useSkillTree = () => {
       const goalRegex = new RegExp(goal.replace(/[^a-zA-Z0-9 ]/g, ''), 'i'); // Sanitize goal for regex
       for (const skill of unlockedSkills) {
         if (goalRegex.test(skill.name) || goalRegex.test(skill.description)) {
-          const lessons = await SkillTreeService.getSkillLessons(skill.id);
+          const lessons = await SkillTreeService.getSkillLessons(skill.category_id, skill.id);
           const firstUncompletedLesson = await findFirstUncompletedLesson(user.uid, lessons);
           if (firstUncompletedLesson) return firstUncompletedLesson;
         }
@@ -112,7 +120,7 @@ export const useSkillTree = () => {
     });
 
     for (const skill of sortedSkills) {
-      const lessons = await SkillTreeService.getSkillLessons(skill.id);
+      const lessons = await SkillTreeService.getSkillLessons(skill.category_id, skill.id);
       const firstUncompletedLesson = await findFirstUncompletedLesson(user.uid, lessons);
       if (firstUncompletedLesson) return firstUncompletedLesson;
     }
@@ -147,32 +155,39 @@ export const useSkillTree = () => {
   };
 };
 
-export const useSkillLessons = (skillId: string, isUnlocked: boolean) => {
+export const useSkillLessons = (categoryId: string, skillId: string, isUnlocked: boolean) => {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadLessons = async () => {
+      logger.info(`useSkillLessons: Loading lessons for categoryId: ${categoryId}, skillId: ${skillId}`);
       if (!skillId || !isUnlocked) {
         setLoading(false);
+        logger.warn(`useSkillLessons: Skipping load due to missing skillId or not unlocked. skillId: ${skillId}, isUnlocked: ${isUnlocked}`);
         return;
       }
 
       try {
         setLoading(true);
         setError(null);
-        const fetchedLessons = await SkillTreeService.getSkillLessons(skillId);
+        const fetchedLessons = await SkillTreeService.getSkillLessons(categoryId, skillId);
+        logger.info(`useSkillLessons: Fetched ${fetchedLessons.length} lessons for skillId: ${skillId}`, fetchedLessons);
 
         const lessonsWithStructuredContent = await Promise.all(fetchedLessons.map(async (lesson) => {
-          if (!lesson.content || lesson.content.length === 0 || typeof lesson.content[0] === 'string') {
+          if (!lesson.content || !Array.isArray(lesson.content) || lesson.content.length === 0) {
+            logger.info(`useSkillLessons: Generating structured content for lesson: ${lesson.id}`);
             const structuredContent = await SkillTreeService.generateStructuredLessonContent(
+              categoryId,
+              skillId, 
               lesson.id,
               lesson.title,
-              lesson.learning_objects
+              lesson.learning_objectives
             );
             return { ...lesson, content: structuredContent };
           } else {
+            logger.info(`useSkillLessons: Using existing content for lesson: ${lesson.id}`);
             return lesson;
           }
         }));
@@ -187,19 +202,20 @@ export const useSkillLessons = (skillId: string, isUnlocked: boolean) => {
     };
 
     loadLessons();
-  }, [skillId, isUnlocked]);
+
+  }, [categoryId, skillId, isUnlocked]);
 
   return { lessons, loading, error };
 };
 
-export const useLesson = (lessonId: string) => {
+export const useLesson = (categoryId: string, skillId: string, lessonId: string) => {
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadLesson = async () => {
-      if (!lessonId) {
+      if (!lessonId || !skillId || !categoryId) {
         setLoading(false);
         return;
       }
@@ -207,32 +223,25 @@ export const useLesson = (lessonId: string) => {
       try {
         setLoading(true);
         setError(null);
-        const fetchedLesson = await SkillTreeService.getLesson(lessonId);
+        let fetchedLesson = await SkillTreeService.getLesson(categoryId, skillId, lessonId);
 
         if (fetchedLesson) {
-          // If content is missing, generate it first.
-          if (!fetchedLesson.content || fetchedLesson.content.length === 0) {
+          // If content is missing or invalid, generate it first.
+          if (!fetchedLesson.content || !Array.isArray(fetchedLesson.content) || fetchedLesson.content.length === 0) {
             const structuredContent = await SkillTreeService.generateStructuredLessonContent(
+              categoryId,
+              skillId, 
               fetchedLesson.id,
               fetchedLesson.title,
-              fetchedLesson.learning_objects
+              fetchedLesson.learning_objectives
             );
             fetchedLesson.content = structuredContent;
           }
 
-          // Now, clean the content regardless of whether it was just generated or fetched.
+          // Now, clean the content to ensure proper markdown rendering.
           const cleanedContent = fetchedLesson.content.map(section => {
-            if (section.type === 'quiz' && section.quiz) {
-              const cleanedQuiz = section.quiz.map(q => {
-                const correctAnswer = (typeof q.correct_answer === 'string')
-                  ? q.correct_answer
-                  : (q.correct_answer as string)?.selected_option;
-
-                return { ...q, correct_answer: correctAnswer || '' };
-              });
-              return { ...section, quiz: cleanedQuiz };
-            } else if (section.type === 'text' && section.content) {
-              return { ...section, content: section.content };
+            if (section.type === 'text' && typeof section.content === 'string') {
+              return { ...section, content: cleanMarkdown(section.content) };
             }
             return section;
           });
@@ -253,12 +262,12 @@ export const useLesson = (lessonId: string) => {
     };
 
     loadLesson();
-  }, [lessonId]);
+  }, [categoryId, skillId, lessonId]);
 
   return { lesson, loading, error };
 };
 
-export const useLessonExercises = (lessonId: string, exerciseId?: string) => {
+export const useLessonExercises = (categoryId: string, skillId: string, lessonId: string, exerciseId?: string) => {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [exercise, setExercise] = useState<Exercise | null>(null);
   const [loading, setLoading] = useState(true);
@@ -266,12 +275,12 @@ export const useLessonExercises = (lessonId: string, exerciseId?: string) => {
 
   useEffect(() => {
     const loadExercises = async () => {
-      if (!lessonId) return;
+      if (!categoryId || !skillId || !lessonId) return;
 
       try {
         setLoading(true);
         setError(null);
-        const data = await SkillTreeService.getLessonExercises(lessonId);
+        const data = await SkillTreeService.getLessonExercises(categoryId, skillId, lessonId);
         setExercises(data);
         if (exerciseId) {
           const currentExercise = data.find(ex => ex.id === exerciseId);
@@ -287,7 +296,7 @@ export const useLessonExercises = (lessonId: string, exerciseId?: string) => {
     };
 
     loadExercises();
-  }, [lessonId, exerciseId]);
+  }, [categoryId, skillId, lessonId, exerciseId]);
 
   return { exercises, exercise, loading, error };
 };

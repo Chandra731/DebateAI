@@ -128,22 +128,41 @@ const SkillTreeView: React.FC = () => {
     if (!skillTree.length) return [];
     const allSkills = skillTree.flatMap(cat => cat.skills || []);
     const tiers: Skill[][] = [];
+    const inDegree = new Map<string, number>();
+    const adj = new Map<string, string[]>();
 
-    // This is a simplified tier calculation. A real implementation would need a proper graph traversal (e.g., topological sort).
-    let currentTier = allSkills.filter(s => !s.prerequisites || s.prerequisites.length === 0);
-    let remainingSkills = allSkills.filter(s => s.prerequisites && s.prerequisites.length > 0);
-
-    while (currentTier.length > 0) {
-      tiers.push(currentTier);
-      const currentTierIds = new Set(currentTier.map(s => s.id));
-      const nextTier = remainingSkills.filter(s =>
-        s.prerequisites?.every(p => currentTierIds.has(p.prerequisite_skill_id))
-      );
-      currentTier = nextTier;
-      remainingSkills = remainingSkills.filter(s => !nextTier.includes(s));
+    for (const skill of allSkills) {
+      inDegree.set(skill.id, 0);
+      adj.set(skill.id, []);
     }
-    // Add any remaining skills (potential cycles or missing prereqs)
-    if (remainingSkills.length > 0) tiers.push(remainingSkills);
+
+    for (const skill of allSkills) {
+      for (const prereq of skill.prerequisites || []) {
+        adj.get(prereq.prerequisite_skill_id)?.push(skill.id);
+        inDegree.set(skill.id, (inDegree.get(skill.id) || 0) + 1);
+      }
+    }
+
+    const queue = allSkills.filter(skill => inDegree.get(skill.id) === 0);
+    let currentTier: Skill[] = [];
+
+    while (queue.length > 0) {
+      const levelSize = queue.length;
+      currentTier = [];
+      for (let i = 0; i < levelSize; i++) {
+        const u = queue.shift()!;
+        currentTier.push(u);
+        for (const v of adj.get(u.id) || []) {
+          inDegree.set(v, (inDegree.get(v) || 0) - 1);
+          if (inDegree.get(v) === 0) {
+            queue.push(allSkills.find(s => s.id === v)!);
+          }
+        }
+      }
+      if (currentTier.length > 0) {
+        tiers.push(currentTier);
+      }
+    }
 
     return tiers;
   }, [skillTree]);

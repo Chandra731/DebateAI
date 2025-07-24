@@ -30,6 +30,8 @@ const SignupPage: React.FC = () => {
         xp: 0,
         level: 1,
         streak: 0,
+        total_debates: 0,
+        wins: 0,
         created_at: new Date(),
       });
       navigate('/app/dashboard');

@@ -1,0 +1,4 @@
+Info logged: {level: 'info', message: 'useSkillLessons: Loading lessons for categoryId: argument-fundamentals, skillId: what-is-an-argument', timestamp: '2025-07-24T09:35:26.898Z'}
+monitoring.ts:64 Info logged: {level: 'info', message: 'useSkillLessons: Loading lessons for categoryId: argument-fundamentals, skillId: what-is-an-argument', timestamp: '2025-07-24T09:35:26.900Z'}
+monitoring.ts:64 Info logged: {level: 'info', message: 'useSkillLessons: Fetched 0 lessons for skillId: what-is-an-argument', timestamp: '2025-07-24T09:35:26.943Z'}
+monitoring.ts:64 Info logged: {level: 'info', message: 'useSkillLessons: Fetched 0 lessons for skillId: what-is-an-argument', timestamp: '2025-07-24T09:35:26.944Z'}

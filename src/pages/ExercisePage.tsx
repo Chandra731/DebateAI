@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useLessonExercises, useSkillTree } from '../hooks/useSkillTree';
+import { useLesson, useLessonExercises, useSkillTree } from '../hooks/useSkillTree';
+import { SkillTreeService, AIFeedback } from '../services/skillTreeService';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
-import { SkillTreeService, AIFeedback } from '../services/skillTreeService';
 import * as ExerciseComponents from '../components/SkillTree/ExerciseComponents';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import { ArrowLeft } from 'lucide-react';
@@ -15,7 +15,13 @@ const ExercisePage: React.FC = () => {
   const { user } = useAuth();
   const { showNotification } = useNotification();
 
-  const { exercise, exercises, loading, error } = useLessonExercises(lessonId!, exerciseId);
+  // Fetch skill data to get categoryId
+  const { skillTree, loading: skillTreeLoading } = useSkillTree();
+  const skill = skillTree.flatMap(cat => cat.skills || []).find(s => s.id === skillId);
+  const categoryId = skill?.category_id;
+
+  const { lesson, loading: lessonLoading, error: lessonError } = useLesson(categoryId!, skillId!, lessonId!); 
+  const { exercises, exercise, loading: exercisesLoading, error: exercisesError } = useLessonExercises(categoryId!, skillId!, lessonId!, exerciseId);
   
   const [feedback, setFeedback] = useState<AIFeedback | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -23,8 +29,8 @@ const ExercisePage: React.FC = () => {
 
   const { getRecommendedLesson } = useSkillTree();
 
-  const handleExerciseSubmit = async (answer: Parameters<typeof SkillTreeService.submitExerciseAttempt>[2]) => {
-    if (!user || !exercise) return;
+  const handleExerciseSubmit = async (answer: Parameters<typeof SkillTreeService.submitExerciseAttempt>[5]) => {
+    if (!user || !exercise || !lesson || !categoryId || !skillId) return;
 
     setIsSubmitting(true);
     setFeedback(null);
@@ -32,6 +38,9 @@ const ExercisePage: React.FC = () => {
     try {
       const { feedback: aiFeedback } = await SkillTreeService.submitExerciseAttempt(
         user.uid,
+        categoryId,
+        skillId!,
+        lessonId!,
         exercise.id,
         answer,
         0 // timeSpent can be implemented later
@@ -58,7 +67,7 @@ const ExercisePage: React.FC = () => {
   };
 
   const handleContinue = async () => {
-    if (!feedback) return; // Should not happen if continue button is shown after feedback
+    if (!feedback || !lesson || !categoryId || !skillId) return; // Ensure lesson and categoryId/skillId are available
 
     // 1. Check for next exercise in current lesson
     const currentIndex = exercises.findIndex(ex => ex.id === exerciseId);
@@ -72,7 +81,7 @@ const ExercisePage: React.FC = () => {
     }
 
     // 2. Check for next lesson in current skill
-    const currentSkillLessons = await SkillTreeService.getSkillLessons(skillId!);
+    const currentSkillLessons = await SkillTreeService.getSkillLessons(categoryId, skillId!);
     const currentLessonIndex = currentSkillLessons.findIndex(l => l.id === lessonId);
     const nextLesson = currentSkillLessons[currentLessonIndex + 1];
 
@@ -115,16 +124,22 @@ const ExercisePage: React.FC = () => {
   };
   
   const renderExerciseComponent = () => {
-    if (!exercise) return null;
+    if (!exercise || !lesson || !categoryId || !skillId) return null; // Ensure all necessary data is available
 
     const props: {
       exercise: typeof exercise;
-      onSubmit: (answer: ExerciseAttempt['user_answer']) => void;
+      onSubmit: (answer: ExerciseAttempt['user_answer'], categoryId: string, skillId: string, lessonId: string) => void;
       disabled: boolean;
+      categoryId: string;
+      skillId: string;
+      lessonId: string;
     } = {
       exercise,
       onSubmit: handleExerciseSubmit,
       disabled: isSubmitting || !!feedback,
+      categoryId: categoryId,
+      skillId: skillId!,
+      lessonId: lessonId!,
     };
 
     switch (exercise.type) {
@@ -143,7 +158,7 @@ const ExercisePage: React.FC = () => {
     }
   };
 
-  if (loading) {
+  if (lessonLoading || skillTreeLoading || exercisesLoading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
         <LoadingSpinner size="lg" />
@@ -151,11 +166,11 @@ const ExercisePage: React.FC = () => {
     );
   }
 
-  if (error) {
+  if (lessonError || !lesson || !categoryId || !skill || exercisesError) {
     return (
       <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
         <h3 className="text-lg font-semibold text-red-800 mb-2">Error Loading Exercise</h3>
-        <p className="text-red-600">{error}</p>
+        <p className="text-red-600">{lessonError || exercisesError || 'Lesson or skill data missing.'}</p>
         <Button onClick={() => navigate(`/app/skills/${skillId}/lessons/${lessonId}`)} className="mt-4">
           Back to Lesson
         </Button>

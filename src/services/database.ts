@@ -307,9 +307,15 @@ export class DatabaseService {
    * @param limitCount - The number of users to fetch.
    * @returns An array of profile objects for the leaderboard.
    */
-  static async getLeaderboard(user: Profile | null, type = 'global', timeFilter = 'allTime', limitCount = 50): Promise<Profile[]> {
+  static async getLeaderboard(user: Profile | null, type = 'global', timeFilter = 'allTime', leaderboardType: 'debate' | 'skill' = 'debate', limitCount = 50): Promise<Profile[]> {
     try {
-      let q = query(collection(db, 'profiles'), orderBy('xp', 'desc'), limit(limitCount));
+      let q = query(collection(db, 'profiles'));
+
+      if (leaderboardType === 'debate') {
+        q = query(q, orderBy('xp', 'desc'));
+      } else if (leaderboardType === 'skill') {
+        q = query(q, orderBy('level', 'desc'), orderBy('xp', 'desc'));
+      }
 
       if (type === 'school' && user?.school) {
         q = query(q, where('school', '==', user.school));
@@ -332,9 +338,20 @@ export class DatabaseService {
         }
       }
       
+      q = query(q, limit(limitCount));
+
       const querySnapshot = await getDocs(q);
-      return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Profile));
+      return querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        xp: doc.data().xp || 0, // Ensure XP defaults to 0
+        level: doc.data().level || 1, // Ensure level defaults to 1
+        total_debates: doc.data().total_debates || 0, // Ensure total_debates defaults to 0
+        wins: doc.data().wins || 0, // Ensure wins defaults to 0
+        streak: doc.data().streak || 0, // Ensure streak defaults to 0
+      }) as Profile);
     } catch (error) {
+      console.error("Error fetching leaderboard:", error);
       return [];
     }
   }

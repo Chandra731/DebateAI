@@ -2,6 +2,7 @@ import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, writeBatch, doc } from 'firebase/firestore';
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 import dotenv from 'dotenv';
+import { skillCategories, skills, lessons, exercises, skillDependencies } from './seedData.js';
 
 dotenv.config({ path: '../.env' });
 
@@ -18,78 +19,73 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-const topics = [
-  {
-    title: 'Artificial Intelligence in the Classroom',
-    description: 'Should AI be used to personalize learning and assist teachers?',
-    category: 'Education',
-    difficulty_level: 1,
-    is_active: true,
-  },
-  {
-    title: 'Social Media and Mental Health',
-    description: 'Does social media have a net negative impact on the mental well-being of teenagers?',
-    category: 'Health',
-    difficulty_level: 2,
-    is_active: true,
-  },
-  {
-    title: 'The Future of Work: Remote vs. Office',
-    description: 'Is a fully remote work model sustainable and beneficial for both employees and companies?',
-    category: 'Business',
-    difficulty_level: 2,
-    is_active: true,
-  },
-  {
-    title: 'Climate Change: Individual vs. Corporate Responsibility',
-    description: 'Who bears the primary responsibility for addressing climate change: individuals or corporations?',
-    category: 'Environment',
-    difficulty_level: 3,
-    is_active: true,
-  },
-];
-
-const features = [
-    {
-        title: 'AI-Powered Sparring Partner',
-        description: 'Hone your arguments against a sophisticated AI opponent that adapts to your skill level.',
-        icon: 'cpu',
-        display_order: 1,
-    },
-    {
-        title: 'Guided Skill Trees',
-        description: 'Master the art of debate through structured lessons and exercises, from basic fallacies to advanced rhetoric.',
-        icon: 'git-merge',
-        display_order: 2,
-    },
-    {
-        title: 'Real-Time Feedback',
-        description: 'Receive instant analysis of your performance, highlighting logical strengths and weaknesses.',
-        icon: 'bar-chart-2',
-        display_order: 3,
-    },
-];
 
 async function seedDatabase() {
   console.log('Starting to seed the database...');
 
   const batch = writeBatch(db);
 
-  // Seed topics
-  const topicsCollection = collection(db, 'topics');
-  topics.forEach((topic) => {
-    const docRef = doc(topicsCollection);
-    batch.set(docRef, { ...topic, created_at: new Date() });
+  // Seed skill categories
+  const skillCategoriesCollection = collection(db, 'skill_categories');
+  skillCategories.forEach((category) => {
+    const docRef = doc(skillCategoriesCollection, category.id);
+    batch.set(docRef, { ...category, created_at: new Date() });
   });
-  console.log(`${topics.length} topics prepared for seeding.`);
+  console.log(`${skillCategories.length} skill categories prepared for seeding.`);
 
-  // Seed features
-  const featuresCollection = collection(db, 'features');
-  features.forEach((feature) => {
-    const docRef = doc(featuresCollection);
-    batch.set(docRef, feature);
+  // Seed skills as subcollections of skill categories
+  skills.forEach((skill) => {
+    const skillDocRef = doc(db, 'skill_categories', skill.category_id, 'skills', skill.id);
+    batch.set(skillDocRef, { ...skill, created_at: new Date() });
   });
-  console.log(`${features.length} features prepared for seeding.`);
+  console.log(`${skills.length} skills prepared for seeding.`);
+
+  // Create a map for skillId to categoryId for easier lookup
+  const skillToCategoryMap = new Map();
+  skills.forEach(skill => {
+    skillToCategoryMap.set(skill.id, skill.category_id);
+  });
+
+  // Create a map for lessonId to skillId and categoryId for easier lookup
+  const lessonToSkillCategoryMap = new Map();
+  lessons.forEach(lesson => {
+    const categoryId = skillToCategoryMap.get(lesson.skill_id);
+    if (categoryId) {
+      lessonToSkillCategoryMap.set(lesson.id, { skillId: lesson.skill_id, categoryId: categoryId });
+    }
+  });
+
+  // Seed lessons as subcollections of skills within categories
+  lessons.forEach((lesson) => {
+    const categoryId = skillToCategoryMap.get(lesson.skill_id);
+    if (categoryId) {
+      const lessonDocRef = doc(db, 'skill_categories', categoryId, 'skills', lesson.skill_id, 'lessons', lesson.id);
+      batch.set(lessonDocRef, { ...lesson, created_at: new Date() });
+    } else {
+      console.warn(`Skipping lesson ${lesson.id} as skill ${lesson.skill_id} not found or has no category.`);
+    }
+  });
+  console.log(`${lessons.length} lessons prepared for seeding.`);
+
+  // Seed exercises as subcollections of lessons within skills within categories
+  exercises.forEach((exercise) => {
+    const lessonInfo = lessonToSkillCategoryMap.get(exercise.lesson_id);
+    if (lessonInfo) {
+      const exerciseDocRef = doc(db, 'skill_categories', lessonInfo.categoryId, 'skills', lessonInfo.skillId, 'lessons', exercise.lesson_id, 'exercises', exercise.id);
+      batch.set(exerciseDocRef, { ...exercise, created_at: new Date() });
+    } else {
+      console.warn(`Skipping exercise ${exercise.id} as lesson ${exercise.lesson_id} not found or has no skill/category info.`);
+    }
+  });
+  console.log(`${exercises.length} exercises prepared for seeding.`);
+
+  // Seed skill dependencies
+  const skillDependenciesCollection = collection(db, 'skill_dependencies');
+  skillDependencies.forEach((dependency) => {
+    const docRef = doc(skillDependenciesCollection);
+    batch.set(docRef, { from_skill_id: dependency.from, to_skill_id: dependency.to });
+  });
+  console.log(`${skillDependencies.length} skill dependencies prepared for seeding.`);
 
   try {
     await batch.commit();

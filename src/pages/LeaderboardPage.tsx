@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Trophy, Medal, Award, Users, Crown, Star, Zap, icons } from 'lucide-react';
+import { Trophy, Medal, Award, Users, Crown, Star, Zap, Mic, TreePine, icons } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLeaderboard, useProfile, useAchievements } from '../hooks/useDatabase';
 import { Profile, Achievement } from '../types';
@@ -9,8 +9,9 @@ const LeaderboardPage: React.FC = () => {
   const { profile } = useProfile();
   const [activeTab, setActiveTab] = useState('global');
   const [timeFilter, setTimeFilter] = useState('weekly');
+  const [leaderboardType, setLeaderboardType] = useState('debate'); // 'debate' or 'skill'
   
-  const { data: leaderboard, isLoading: loading } = useLeaderboard(activeTab, timeFilter);
+  const { data: leaderboard, isLoading: loading } = useLeaderboard(activeTab, timeFilter, leaderboardType);
   const { data: popularAchievements } = useAchievements();
 
   const tabs = [
@@ -23,6 +24,11 @@ const LeaderboardPage: React.FC = () => {
     { id: 'weekly', label: 'This Week' },
     { id: 'monthly', label: 'This Month' },
     { id: 'allTime', label: 'All Time' },
+  ];
+
+  const contentTabs = [
+    { id: 'debate', label: 'Debate Leaderboard', icon: Mic },
+    { id: 'skill', label: 'Skill Leaderboard', icon: TreePine },
   ];
 
   const getRankIcon = (rank: number) => {
@@ -113,6 +119,24 @@ const LeaderboardPage: React.FC = () => {
             ))}
           </div>
         </div>
+
+        {/* New: Leaderboard Type Tabs (Debate vs. Skill) */}
+        <div className="mt-4 pt-4 border-t border-gray-200 flex space-x-1 bg-gray-100 rounded-lg p-1">
+          {contentTabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setLeaderboardType(tab.id)}
+              className={`flex items-center space-x-2 px-4 py-2 rounded-md font-medium transition-colors ${
+                leaderboardType === tab.id
+                  ? 'bg-white text-primary-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <tab.icon className="w-4 h-4" />
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="grid lg:grid-cols-4 gap-6">
@@ -121,8 +145,7 @@ const LeaderboardPage: React.FC = () => {
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="p-6 border-b border-gray-200">
               <h2 className="text-lg font-semibold text-gray-900">
-                {activeTab === 'global' ? 'Global Rankings' : 
-                 activeTab === 'school' ? 'School Rankings' : 'Friends Rankings'}
+                {leaderboardType === 'debate' ? 'Debate Rankings' : 'Skill Rankings'} ({activeTab === 'global' ? 'Global' : activeTab === 'school' ? 'My School' : 'Friends'})
               </h2>
             </div>
 
@@ -147,75 +170,79 @@ const LeaderboardPage: React.FC = () => {
               </div>
             ) : (
               <div className="divide-y divide-gray-100">
-                {leaderboard?.map((leader: Profile, index: number) => {
-                  const rank = index + 1;
-                  const winRate = leader.total_debates > 0 
-                    ? Math.round((leader.wins / leader.total_debates) * 100) 
-                    : 0;
-                  
-                  return (
-                    <div 
-                      key={leader.id} 
-                      className={`p-6 hover:bg-gray-50 transition-colors ${
-                        index < 3 ? 'bg-gradient-to-r from-yellow-50 to-transparent' : ''
-                      } ${leader.id === user?.uid ? 'bg-primary-50 border-l-4 border-primary-500' : ''}`}
-                    >
-                      <div className="flex items-center space-x-4">
-                        <div className="flex-shrink-0">
-                          {getRankIcon(rank)}
-                        </div>
-                        
-                        <div className="flex-shrink-0">
-                          <div className="w-12 h-12 bg-gradient-to-r from-primary-400 to-primary-600 rounded-full flex items-center justify-center">
-                            <span className="text-white font-bold">
-                              {leader.name?.charAt(0) || 'U'}
-                            </span>
-                          </div>
-                        </div>
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rank</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">School</th>
+                      {leaderboardType === 'debate' ? (
+                        <>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">XP</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Level</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Win Rate</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Streak</th>
+                        </>
+                      ) : (
+                        <>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">XP</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Level</th>
+                        </>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {leaderboard?.map((leader: Profile, index: number) => {
+                      const rank = index + 1;
+                      const winRate = leader.total_debates > 0 
+                        ? Math.round((leader.wins / leader.total_debates) * 100) 
+                        : 0;
 
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center space-x-2 mb-1">
-                            <p className="text-lg font-semibold text-gray-900 truncate">
-                              {leader.name}
-                              {leader.id === user?.uid && (
-                                <span className="ml-2 text-sm text-primary-600">(You)</span>
-                              )}
-                            </p>
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getBadgeColor(leader.level || 1)}`}>
-                              {getBadgeText(leader.level || 1)}
-                            </span>
-                          </div>
-                          <p className="text-sm text-gray-500 truncate">{leader.school || 'No school listed'}</p>
-                        </div>
+                      return (
+                        <tr key={leader.id} className={`${leader.id === user?.uid ? 'bg-primary-50 border-l-4 border-primary-500' : ''}`}>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            {getRankIcon(rank)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center">
+                              <div className="flex-shrink-0 h-10 w-10 rounded-full bg-gradient-to-r from-primary-400 to-primary-600 flex items-center justify-center text-white font-bold">
+                                {leader.name?.charAt(0) || 'U'}
+                              </div>
+                              <div className="ml-4">
+                                <div className="text-sm font-medium text-gray-900">
+                                  {leader.name} {leader.id === user?.uid && (<span className="text-primary-600">(You)</span>)}
+                                </div>
+                                <div className="text-sm text-gray-500">{leader.email}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {leader.school || 'N/A'}
+                          </td>
+                          {leaderboardType === 'debate' ? (
+                            <>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{leader.xp}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{leader.level}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{winRate}%</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{leader.streak || 0}</td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{leader.xp}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{leader.level}</td>
+                            </>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
 
-                        <div className="flex items-center space-x-6 text-center">
-                          <div>
-                            <div className="text-lg font-bold text-gray-900">{leader.xp}</div>
-                            <div className="text-xs text-gray-500">XP</div>
-                          </div>
-                          <div>
-                            <div className="text-lg font-bold text-primary-600">Level {leader.level}</div>
-                            <div className="text-xs text-gray-500">Level</div>
-                          </div>
-                          <div>
-                            <div className="text-lg font-bold text-accent-600">{winRate}%</div>
-                            <div className="text-xs text-gray-500">Win Rate</div>
-                          </div>
-                          <div>
-                            <div className="text-lg font-bold text-red-500">{leader.streak || 0}</div>
-                            <div className="text-xs text-gray-500">Streak</div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-                
                 {leaderboard?.length === 0 && (
                   <div className="p-12 text-center text-gray-500">
                     <Trophy className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                     <p>No rankings available yet.</p>
-                    <p className="text-sm">Start debating to appear on the leaderboard!</p>
+                    <p className="text-sm">Start {leaderboardType === 'debate' ? 'debating' : 'learning'} to appear on the leaderboard!</p>
                   </div>
                 )}
               </div>

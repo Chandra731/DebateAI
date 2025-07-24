@@ -14,8 +14,13 @@ const LessonPage: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { showNotification } = useNotification();
-  const { lesson, loading: lessonLoading, error: lessonError } = useLesson(lessonId || '');
-  const { exercises, loading: exercisesLoading, error: exercisesError } = useLessonExercises(lessonId || '');
+
+  const { skillTree, loading: skillTreeLoading } = useSkillTree();
+  const skill = skillTree.flatMap(cat => cat.skills || []).find(s => s.id === skillId);
+  const categoryId = skill?.category_id;
+
+  const { lesson, loading: lessonLoading, error: lessonError } = useLesson(categoryId!, skillId!, lessonId || '');
+  const { exercises, loading: exercisesLoading, error: exercisesError } = useLessonExercises(categoryId!, skillId!, lessonId || '');
   const { refetch: refetchSkillTree } = useSkillTree();
 
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
@@ -24,21 +29,21 @@ const LessonPage: React.FC = () => {
   const [selectedQuizOption, setSelectedQuizOption] = useState<string | null>(null);
   const [lessonCompleted, setLessonCompleted] = useState(false);
   const [startTime] = useState(Date.now());
-  const [correctAnswers, setCorrectAnswers] = useState(0);
+  const [correctAnswers, setCorrectAnswers] = useState<number>(0);
 
   const currentSection = lesson?.content[currentSectionIndex];
-  const currentQuizQuestion: QuizQuestion | undefined = 
-    currentSection?.type === 'quiz' && currentSection.quiz 
+  const currentQuizQuestion: QuizQuestion | undefined =
+    currentSection?.type === 'quiz' && currentSection.quiz
       ? currentSection.quiz[currentQuizQuestionIndex]
       : undefined;
 
   useEffect(() => {
-    // Reset state when lessonId changes
     setCurrentSectionIndex(0);
     setCurrentQuizQuestionIndex(0);
     setQuizFeedbackStatus('unattempted');
     setSelectedQuizOption(null);
     setLessonCompleted(false);
+    setCorrectAnswers(0);
   }, [lessonId]);
 
   const handleQuizSubmit = () => {
@@ -55,8 +60,8 @@ const LessonPage: React.FC = () => {
   };
 
   const handleCompleteLesson = async () => {
-    if (!lesson || !user?.uid) return;
-    
+    if (!lesson || !user?.uid || !categoryId || !skillId) return;
+
     const timeSpent = Math.round((Date.now() - startTime) / 1000);
     const totalQuizQuestions = lesson.content.reduce((acc, section) => {
       if (section.type === 'quiz' && section.quiz) {
@@ -67,19 +72,19 @@ const LessonPage: React.FC = () => {
     const comprehensionScore = totalQuizQuestions > 0 ? Math.round((correctAnswers / totalQuizQuestions) * 100) : 100;
 
     try {
-      await SkillTreeService.completeLesson(user.uid, lesson.id, timeSpent, comprehensionScore);
+      await SkillTreeService.completeLesson(user.uid, categoryId, skillId, lesson.id, timeSpent, comprehensionScore);
       showNotification({
         type: 'success',
         title: 'Lesson Complete!',
-        message: `You&apos;ve earned XP and made progress.`
+        message: `You've earned XP and made progress.`,
       });
-      refetchSkillTree(); // Refetch skill tree data to update UI
+      refetchSkillTree();
       setLessonCompleted(true);
     } catch (error) {
       showNotification({
         type: 'error',
         title: 'Error',
-        message: 'Could not save lesson completion.'
+        message: 'Could not save lesson completion.',
       });
     }
   };
@@ -94,49 +99,42 @@ const LessonPage: React.FC = () => {
       const previousSection = lesson?.content[currentSectionIndex - 1];
       if (previousSection?.type === 'quiz') {
         setCurrentQuizQuestionIndex((previousSection.quiz?.length || 1) - 1);
-      } else {
-        setCurrentQuizQuestionIndex(0);
       }
       setQuizFeedbackStatus('unattempted');
       setSelectedQuizOption(null);
     }
   };
 
-  const handleNextSection = () => {
-    if (!lesson) return;
+  const handleNextSection = async () => {
+    if (!lesson || !categoryId || !skillId) return;
 
     const isLastSection = currentSectionIndex >= lesson.content.length - 1;
     const isQuizSection = currentSection?.type === 'quiz';
     const isQuizFinished = isQuizSection && currentQuizQuestionIndex >= (currentSection.quiz?.length || 0) - 1;
 
     if (isQuizSection) {
-      if (quizFeedbackStatus === 'unattempted') return; // Must attempt quiz before moving on
+      if (quizFeedbackStatus === 'unattempted') return;
 
       if (!isQuizFinished) {
-        // Move to next quiz question
         setCurrentQuizQuestionIndex(prev => prev + 1);
         setQuizFeedbackStatus('unattempted');
         setSelectedQuizOption(null);
       } else if (!isLastSection) {
-        // Move to next lesson section
         setCurrentSectionIndex(prev => prev + 1);
         setCurrentQuizQuestionIndex(0);
         setQuizFeedbackStatus('unattempted');
         setSelectedQuizOption(null);
       } else {
-        // End of all sections
         handleCompleteLesson();
       }
     } else if (!isLastSection) {
-      // Move to next lesson section (text type)
       setCurrentSectionIndex(prev => prev + 1);
     } else {
-      // End of all sections
       handleCompleteLesson();
     }
   };
 
-  if (lessonLoading) {
+  if (lessonLoading || skillTreeLoading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
         <LoadingSpinner size="lg" />
@@ -144,18 +142,21 @@ const LessonPage: React.FC = () => {
     );
   }
 
-  if (lessonError || !lesson) {
+  if (lessonError || !lesson || !categoryId || !skill) {
     return (
       <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
         <h3 className="text-lg font-semibold text-red-800 mb-2">Error Loading Lesson</h3>
-        <p className="text-red-600">{lessonError || 'Lesson not found.'}</p>
-        <Button onClick={() => navigate('/app/skills')} className="mt-4">Back to Skill Tree</Button>
+        <p className="text-red-600">{lessonError || 'Lesson not found or skill data missing.'}</p>
+        <Button onClick={() => navigate('/app/skills')} className="mt-4">
+          Back to Skill Tree
+        </Button>
       </div>
     );
   }
 
-  const isLastContent = currentSectionIndex >= lesson.content.length - 1 &&
-                        (currentSection?.type !== 'quiz' || currentQuizQuestionIndex >= (currentSection.quiz?.length || 0) - 1);
+  const isLastContent =
+    currentSectionIndex >= lesson.content.length - 1 &&
+    (currentSection?.type !== 'quiz' || currentQuizQuestionIndex >= (currentSection.quiz?.length || 0) - 1);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -182,22 +183,22 @@ const LessonPage: React.FC = () => {
 
               {currentSection.type === 'quiz' && currentSection.quiz && currentQuizQuestion && (
                 <div className="mt-6 p-6 border border-gray-200 rounded-lg bg-blue-50">
-                  <h2 className="text-2xl font-semibold mb-4 text-blue-800">Quiz Time! (Question {currentQuizQuestionIndex + 1} of {currentSection.quiz.length})</h2>
+                  <h2 className="text-2xl font-semibold text-blue-800">Quiz Time! (Question {currentQuizQuestionIndex + 1} of {currentSection.quiz.length})</h2>
                   <p className="text-lg font-medium mb-4">{currentQuizQuestion.question}</p>
                   <div className="space-y-3">
                     {currentQuizQuestion.options.map((option, index) => {
                       const isSelected = selectedQuizOption === option;
                       const isCorrectOption = option.trim() === currentQuizQuestion.correct_answer.trim();
 
-                      let buttonVariant: "outline" | "success" | "danger" = "outline";
+                      let buttonVariant: 'outline' | 'success' | 'danger' | 'primary' = 'outline';
                       if (quizFeedbackStatus !== 'unattempted') {
                         if (isCorrectOption) {
-                          buttonVariant = "success";
+                          buttonVariant = 'success';
                         } else if (isSelected && !isCorrectOption) {
-                          buttonVariant = "danger";
+                          buttonVariant = 'danger';
                         }
                       } else if (isSelected) {
-                        buttonVariant = "primary"; // Highlight selected before submission
+                        buttonVariant = 'primary';
                       }
 
                       return (
@@ -227,12 +228,16 @@ const LessonPage: React.FC = () => {
                     </Button>
                   )}
                   {quizFeedbackStatus !== 'unattempted' && (
-                    <div className={`mt-4 p-3 rounded-lg text-center ${
-                      quizFeedbackStatus === 'correct' ? 'bg-green-100 border border-green-200' : 'bg-red-100 border border-red-200'
-                    }`}>
-                      <p className={`font-semibold ${
-                        quizFeedbackStatus === 'correct' ? 'text-green-700' : 'text-red-700'
-                      }`}>
+                    <div
+                      className={`mt-4 p-3 rounded-lg text-center ${
+                        quizFeedbackStatus === 'correct' ? 'bg-green-100 border border-green-200' : 'bg-red-100 border border-red-200'
+                      }`}
+                    >
+                      <p
+                        className={`font-semibold ${
+                          quizFeedbackStatus === 'correct' ? 'text-green-700' : 'text-red-700'
+                        }`}
+                      >
                         {quizFeedbackStatus === 'correct' ? 'Correct!' : 'Incorrect.'}
                       </p>
                       {quizFeedbackStatus === 'incorrect' && (
@@ -264,8 +269,8 @@ const LessonPage: React.FC = () => {
             <div className="text-center py-12">
               <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
               <h2 className="text-2xl font-bold text-gray-900">Lesson Complete!</h2>
-              <p className="text-gray-600 mb-8">You&apos;ve finished the lesson. Now, test your knowledge with these exercises.</p>
-              
+              <p className="text-gray-600 mb-8">You've finished the lesson. Now, test your knowledge with these exercises.</p>
+
               {exercisesLoading ? (
                 <LoadingSpinner />
               ) : exercisesError ? (
@@ -279,7 +284,7 @@ const LessonPage: React.FC = () => {
                       to={`/app/skills/${skillId}/lessons/${lessonId}/exercises/${exercise.id}`}
                       className="block w-full"
                     >
-                      <Button variant="outline" className="w-full justify-between">
+                      <Button variant="primary" className="w-full justify-between">
                         <div className="flex items-center">
                           <BrainCircuit className="w-5 h-5 mr-3 text-primary-500" />
                           <span>{exercise.title}</span>

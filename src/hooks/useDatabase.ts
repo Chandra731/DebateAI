@@ -105,11 +105,11 @@ export function useUserCases() {
   return { cases, loading, error, refetch };
 }
 
-export function useLeaderboard(type = 'global', timeFilter = 'allTime') {
+export function useLeaderboard(type = 'global', timeFilter = 'allTime', leaderboardType: 'debate' | 'skill' = 'debate') {
   const { user } = useAuth();
   const { data: leaderboard, loading, error, refetch } = useAsyncData<Profile[]>(
-    () => DatabaseService.getLeaderboard(user, type, timeFilter),
-    [user, type, timeFilter],
+    () => DatabaseService.getLeaderboard(user, type, timeFilter, leaderboardType),
+    [user, type, timeFilter, leaderboardType],
     []
   );
 

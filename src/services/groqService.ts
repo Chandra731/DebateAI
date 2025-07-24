@@ -9,6 +9,7 @@ export class GroqService {
     prompt: string,
     systemPrompt?: string
   ): Promise<string | ExerciseEvaluation | DebateCase> {
+    logger.info('Attempting to get completion from Groq API.', { prompt, systemPrompt });
     if (!GROQ_API_KEY) {
       logger.warn('Groq API key not available, using mock response.');
       return this.getMockCompletion(prompt);
@@ -35,25 +36,26 @@ export class GroqService {
 
       if (!response.ok) {
         const errorBody = await response.text();
+        logger.error(new Error(`Groq API request failed with status ${response.status}: ${errorBody}`), {
+          component: 'GroqService',
+          action: 'getCompletion',
+          statusCode: response.status,
+          errorBody,
+        });
         throw new Error(
           `Groq API request failed with status ${response.status}: ${errorBody}`
         );
       }
 
       const data: GroqCompletionResponse = await response.json();
-      const content = data.choices[0].message.content;
-
-      try {
-        // Try to parse the content as JSON, in case it's an exercise evaluation or a debate case
-        return JSON.parse(content);
-      } catch (error) {
-        // If it's not JSON, return the content as a string
-        return content;
-      }
-    } catch {
-        logger.error(new Error('Failed to get completion from Groq API.'), {
+      console.log('Raw Groq API completion data:', data);
+      logger.info('Successfully received Groq API completion.', { data });
+      return data.choices[0].message.content;
+    } catch (error) {
+        logger.error(error as Error, {
           component: 'GroqService',
           action: 'getCompletion',
+          originalError: error, // Log the original error object
         });
         throw new Error('Failed to get completion from Groq API.');
       }

@@ -18,7 +18,7 @@ interface SkillModalProps {
 const SkillModal: React.FC<SkillModalProps> = ({ skill, isOpen, onClose, isUnlocked }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { lessons, loading: lessonsLoading } = useSkillLessons(skill.id, isUnlocked);
+  const { lessons, loading: lessonsLoading } = useSkillLessons(skill.category_id, skill.id, isUnlocked);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [loadingExercises, setLoadingExercises] = useState(false);
   const [completedLessons, setCompletedLessons] = useState<Set<string>>(new Set());
@@ -43,14 +43,14 @@ const SkillModal: React.FC<SkillModalProps> = ({ skill, isOpen, onClose, isUnloc
       if (lessons.length > 0) {
         setLoadingExercises(true);
         const allExercises = await Promise.all(
-          lessons.map(lesson => SkillTreeService.getLessonExercises(lesson.id))
+          lessons.map(lesson => SkillTreeService.getLessonExercises(skill.category_id, skill.id, lesson.id))
         );
         setExercises(allExercises.flat());
         setLoadingExercises(false);
       }
     };
     fetchExercises();
-  }, [lessons]);
+  }, [lessons, skill.category_id, skill.id]);
 
   if (!isOpen) return null;
 
