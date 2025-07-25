@@ -1,20 +1,11 @@
-The build failed because Rollup could not resolve the import "groq-sdk" from "src/services/groqService.ts".
-
-Solution
-To resolve this issue:
-
-Verify that the package "groq-sdk" is included in the dependencies or devDependencies section of the package.json.
-If the package is present in package.json, you need to add it to the external configuration in your Vite configuration.
-
-Example of adding the "groq-sdk" package to the build.rollupOptions.external in the vite.config.js file:
-
-// vite.config.js
-import { defineConfig } from 'vite';
-
-export default defineConfig({
-  build: {
-    rollupOptions: {
-      external: ['groq-sdk'],
-    },
-  },
-});
+monitoring.ts:33 
+ Error logged: 
+{level: 'error', message: 'Netlify function request failed with status 400: {"message":"Invalid request type"}', stack: 'Error: Netlify function request failed with status…/localhost:8888/src/pages/CasePrepPage.tsx:68:26)', timestamp: '2025-07-25T19:08:01.084Z', url: 'http://localhost:8888/app/case-prep', …}
+monitoring.ts:33 
+ Error logged: 
+{level: 'error', message: 'Netlify function request failed with status 400: {"message":"Invalid request type"}', stack: 'Error: Netlify function request failed with status…/localhost:8888/src/pages/CasePrepPage.tsx:68:26)', timestamp: '2025-07-25T19:08:01.084Z', url: 'http://localhost:8888/app/case-prep', …}
+CasePrepPage.tsx:96 
+ Error generating case: Error: Failed to get completion via Netlify function.
+    at GroqService.getCompletion (groqService.ts:47:13)
+    at async handleGenerateCase (CasePrepPage.tsx:63:26)
+﻿
