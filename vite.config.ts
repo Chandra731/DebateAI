@@ -22,6 +22,7 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
+      external: ['groq-sdk'], // Add groq-sdk to external dependencies
       output: {
         manualChunks: {
           vendor: ['react', 'react-dom'],

@@ -1,19 +1,20 @@
-Uncaught (in promise) TypeError: Cannot read properties of undefined (reading 'overall')
-    at endDebate (LiveDebatePage.tsx:125:43)
-endDebate @ LiveDebatePage.tsx:125
-await in endDebate
-callCallback2 @ react-dom.development.js:4164
-invokeGuardedCallbackDev @ react-dom.development.js:4213
-invokeGuardedCallback @ react-dom.development.js:4277
-invokeGuardedCallbackAndCatchFirstError @ react-dom.development.js:4291
-executeDispatch @ react-dom.development.js:9041
-processDispatchQueueItemsInOrder @ react-dom.development.js:9073
-processDispatchQueue @ react-dom.development.js:9086
-dispatchEventsForPlugins @ react-dom.development.js:9097
-(anonymous) @ react-dom.development.js:9288
-batchedUpdates$1 @ react-dom.development.js:26179
-batchedUpdates @ react-dom.development.js:3991
-dispatchEventForPluginEventSystem @ react-dom.development.js:9287
-dispatchEventWithEnableCapturePhaseSelectiveHydrationWithoutDiscreteEventReplay @ react-dom.development.js:6465
-dispatchEvent @ react-dom.development.js:6457
-dispatchDiscreteEvent @ react-dom.development.js:6430
+The build failed because Rollup could not resolve the import "groq-sdk" from "src/services/groqService.ts".
+
+Solution
+To resolve this issue:
+
+Verify that the package "groq-sdk" is included in the dependencies or devDependencies section of the package.json.
+If the package is present in package.json, you need to add it to the external configuration in your Vite configuration.
+
+Example of adding the "groq-sdk" package to the build.rollupOptions.external in the vite.config.js file:
+
+// vite.config.js
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  build: {
+    rollupOptions: {
+      external: ['groq-sdk'],
+    },
+  },
+});
