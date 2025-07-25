@@ -1,20 +1,30 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTopics, useProfile } from '../hooks/useDatabase';
 import { useAuth } from '../contexts/AuthContext';
 import { getAiOpponentProfile } from '../config/aiOpponents';
 import { GroqService } from '../services/groqService';
 import { DatabaseService } from '../services/database';
-import { 
-  Mic, 
-  MicOff, 
-  Volume2, 
-  VolumeX, 
-  Play, 
-  Square, 
+import {
+  Mic,
+  MicOff,
+  Volume2,
+  VolumeX,
+  Play,
+  Square,
   Brain,
   AlertCircle
 } from 'lucide-react';
+import { useNewSpeechRecognition } from "@/hooks/useNewSpeechRecognition";
+import { useTextToSpeech } from "@/hooks/useTextToSpeech";
+import { DebateEvaluationResult } from '../types';
+
+interface Topic {
+  id: string;
+  title: string;
+  category: string;
+  difficulty_level: string;
+}
 
 const LiveDebatePage: React.FC = () => {
   const [isRecording, setIsRecording] = useState(false);
@@ -22,15 +32,14 @@ const LiveDebatePage: React.FC = () => {
   const [debateStarted, setDebateStarted] = useState(false);
   const [currentSpeaker, setCurrentSpeaker] = useState<'user' | 'ai'>('user');
   const [timeRemaining, setTimeRemaining] = useState(180); // 3 minutes
-  const [transcript, setTranscript] = useState<Array<{speaker: string, text: string, timestamp: string}>>([]);
+  const [transcript, setTranscript] = useState<Array<{ speaker: string, text: string, timestamp: string }>>([]);
   const [aiThinking, setAiThinking] = useState(false);
   const [customTopic, setCustomTopic] = useState('');
   const [userSide, setUserSide] = useState<'pro' | 'con' | null>(null);
   const [aiOpponent, setAiOpponent] = useState<any>(null);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const finalTranscriptRef = useRef('');
-  const [microphonePermission, setMicrophonePermission] = useState<boolean | null>(null);
-  
+  const [textInput, setTextInput] = useState(''); // For hybrid input
+  const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
+
   const [debateId, setDebateId] = useState<string | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -42,11 +51,19 @@ const LiveDebatePage: React.FC = () => {
 
   const navigate = useNavigate();
   const { topics, loading: topicsLoading } = useTopics();
-  const { profile } = useProfile();
+  const { profile, refetch: refetchProfile } = useProfile(); // Get refetch from useProfile
   const { user } = useAuth();
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
 
-  
+  // New hooks for speech recognition and text-to-speech
+  const { transcript: speechTranscript, isListening, error: speechError, start, stop, isSupported } =
+    useNewSpeechRecognition({
+      onResult: (result) => {
+        setTextInput(result); // Update text input with speech transcript
+      },
+      silenceTimeout: 3000, // Stop listening after 3 seconds of silence
+    });
+  const { speak, cancel: cancelSpeech, isSpeaking } = useTextToSpeech();
 
   useEffect(() => {
     if (profile) {
@@ -58,163 +75,134 @@ const LiveDebatePage: React.FC = () => {
     if (!topicsLoading && topics.length > 0 && !selectedTopic) {
       setSelectedTopic(topics[0]);
     }
+  }, [topics, topicsLoading, selectedTopic]);
 
-    // Initialize Speech Recognition
-    const SpeechRecognition = window.SpeechRecognition || (window as Window & typeof globalThis).webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      // Request microphone permission
-      navigator.mediaDevices.getUserMedia({ audio: true })
-        .then(() => {
-          setMicrophonePermission(true);
-          const recognition = new SpeechRecognition();
-          recognition.continuous = true;
-          recognition.interimResults = true;
-          recognition.lang = 'en-US';
-
-          recognition.onresult = (event: SpeechRecognitionEvent) => {
-            let interimTranscript = '';
-            let finalTranscript = '';
-
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-              const transcript = event.results[i][0].transcript;
-              if (event.results[i].isFinal) {
-                finalTranscript += transcript;
-              } else {
-                interimTranscript += transcript;
-              } 
-            }
-            finalTranscriptRef.current = finalTranscript;
-          };
-
-          recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-            setIsRecording(false);
-            if (event.error === 'not-allowed' || event.error === 'permission-denied') {
-              setMicrophonePermission(false);
-            }
-          };
-
-          recognition.onend = () => {
-          };
-
-          recognitionRef.current = recognition;
-        })
-        .catch((error) => {
-          setMicrophonePermission(false);
-        });
-    } else {
-      setMicrophonePermission(false); // Treat as not allowed if API not supported
-      // Optionally, show a message to the user
-    }
-
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
-    };
-  }, [topics, topicsLoading]);
   const [selectedFormat, setSelectedFormat] = useState(debateFormats[0]);
 
-  useEffect(() => {
-    if (debateStarted && timeRemaining > 0) {
-      timerRef.current = setTimeout(() => {
-        setTimeRemaining(prev => prev - 1);
-      }, 1000);
-    } else if (timeRemaining === 0) {
-      handleSpeechEnd();
-    }
-
-    return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-      }
-    };
-  }, [debateStarted, timeRemaining]);
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
   const debateRounds = [
-    { name: 'Opening Statement', speaker: 'user', duration: 180 },
-    { name: 'Opening Statement', speaker: 'ai', duration: 180 },
-    { name: 'Rebuttal', speaker: 'user', duration: 120 },
-    { name: 'Rebuttal', speaker: 'ai', duration: 120 },
-    { name: 'Closing Statement', speaker: 'user', duration: 90 },
-    { name: 'Closing Statement', speaker: 'ai', duration: 90 },
+    { name: 'Opening Statement', speaker: 'user', duration: 180, maxTokens: 150 },
+    { name: 'Opening Statement', speaker: 'ai', duration: 180, maxTokens: 150 },
+    { name: 'Rebuttal', speaker: 'user', duration: 120, maxTokens: 100 },
+    { name: 'Rebuttal', speaker: 'ai', duration: 120, maxTokens: 100 },
+    { name: 'Closing Statement', speaker: 'user', duration: 90, maxTokens: 75 },
+    { name: 'Closing Statement', speaker: 'ai', duration: 90, maxTokens: 75 },
   ];
 
-  const startDebate = async () => {
-    if (!user?.uid || !selectedTopic || !userSide) return; // Ensure user is logged in and topic/side selected
+  const endDebate = async () => {
+    if (debateId && selectedTopic && userSide) {
+      setAiThinking(true);
+      cancelSpeech(); // Stop any ongoing AI speech
 
-    const newDebate = await DatabaseService.createDebate({
-      user_id: user.uid, 
-      topic_id: selectedTopic.id,
-      topic_title: selectedTopic.title,
-      user_side: userSide,
-      format: selectedFormat.name,
-      status: 'active',
-      transcript: [],
-    });
-    setDebateId(newDebate.id);
-    setDebateStarted(true);
-    setCurrentSpeaker(debateRounds[0].speaker);
-    setTimeRemaining(debateRounds[0].duration);
-    setTranscript([]);
-  };
+      const aiSide = userSide === 'pro' ? 'con' : 'pro';
+      let evaluation: DebateEvaluationResult | null = null;
+      try {
+        evaluation = await GroqService.evaluateDebate(
+          transcript,
+          selectedTopic.title,
+          userSide,
+          aiSide
+        );
+      } catch (evalError) {
+        console.error("Error during AI debate evaluation:", evalError);
+        // Fallback if evaluation fails
+        evaluation = {
+          user_score: { matter: 0, manner: 0, method: 0, overall: 0 },
+          ai_score: { matter: 0, manner: 0, method: 0, overall: 0 },
+          feedback: {
+            strengths: "Could not generate detailed feedback.",
+            improvements: "Please check your internet connection or try again later.",
+            specific_examples: [],
+          },
+          winner: 'tie',
+          explanation: "Evaluation failed due to an error.",
+        };
+      }
 
-  const toggleRecording = () => {
-    if (!isRecording) {
-      setIsRecording(true);
-      finalTranscriptRef.current = ''; // Clear previous transcript
-      if (recognitionRef.current) {
-        recognitionRef.current.start();
-        console.log("Speech recognition started.");
-      }
-    } else {
-      setIsRecording(false);
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-        console.log("Speech recognition stopped.");
-      }
-      const userSpeech = finalTranscriptRef.current.trim();
-      if (userSpeech) {
-        setTranscript(prev => [...prev, {
-          speaker: 'You',
-          text: userSpeech,
-          timestamp: new Date().toLocaleTimeString()
-        }]);
-        handleSpeechEnd(userSpeech); // Pass the recognized speech to handleSpeechEnd
-      } else {
-        console.log("No speech detected.");
-        // Optionally, show a message to the user that no speech was detected
-      }
+      await DatabaseService.saveDebate(debateId, {
+        status: 'completed',
+        transcript: transcript,
+        winner: evaluation?.winner || 'tie',
+        user_score: evaluation?.user_score?.overall || 0,
+        ai_score: evaluation?.ai_score?.overall || 0,
+        feedback: {
+          strengths: evaluation?.feedback?.strengths || "No detailed strengths provided.",
+          improvements: evaluation?.feedback?.improvements || "No detailed improvements provided.",
+        },
+        winner_side: evaluation?.winner === 'user' ? userSide : (evaluation?.winner === 'ai' ? aiSide : null),
+      });
+      
+      refetchProfile(); // Refetch profile data to update total debates/wins
+
+      navigate(`/app/debate-results/${debateId}`);
     }
+    setDebateStarted(false);
+    setIsRecording(false);
+    setTimeRemaining(180);
   };
 
-  const handleSpeechEnd = async (userSpeech?: string) => {
+  const handleSpeechEnd = useCallback(async (userSpeech?: string) => {
     setIsRecording(false);
+    stop(); // Ensure speech recognition is stopped
+
+    const finalUserSpeech = userSpeech || textInput.trim();
+
+    if (!finalUserSpeech && currentSpeaker === 'user') {
+      console.log("No speech or text detected from user.");
+      // Optionally, show a message to the user that no speech was detected
+      // For now, just switch to AI's turn if user didn't speak
+      setCurrentSpeaker('ai');
+      setTimeRemaining(debateRounds[currentRoundIndex].duration); // Set timer for AI's turn
+      return;
+    }
+
+    // Add user's final statement to transcript
+    if (currentSpeaker === 'user') {
+      setTranscript(prev => [...prev, {
+        speaker: 'You',
+        text: finalUserSpeech,
+        timestamp: new Date().toLocaleTimeString()
+      }]);
+      setTextInput(''); // Clear text input after sending
+    }
+
     setAiThinking(true);
-    
+    cancelSpeech(); // Cancel any ongoing AI speech
+
     const debateContext = transcript.map(entry => `${entry.speaker}: ${entry.text}`).join('\n');
 
     const aiSide = userSide === 'pro' ? 'con' : 'pro';
-    const systemPrompt = `You are an AI debate opponent. Your goal is to engage in a constructive debate on the given topic.\n    - Your assigned side is ${aiSide.toUpperCase()}.\n    - The user's assigned side is ${userSide?.toUpperCase()}.\n    - Respond directly to the user's last point.\n    - Maintain a respectful but firm tone.\n    - Use logical arguments and evidence (even if simulated).\n    - Keep your responses concise and to the point, suitable for a debate round.\n    - Do not introduce new topics unless necessary for rebuttal.\n    - Argue from your assigned side (${aiSide.toUpperCase()}).`;
+    const currentRound = debateRounds[currentRoundIndex];
 
-    const prompt = `Debate Topic: "${selectedTopic?.title || 'General Debate Topic'}"\n    Your Side: ${userSide?.toUpperCase()}\n    AI Opponent Side: ${aiSide.toUpperCase()}\n    Debate History:\n${debateContext}\n    User's last statement: "${userSpeech}"\n\n    Your turn to speak. Respond to the user's last statement from your assigned side.`;
+    const systemPrompt = `You are an AI debate opponent. My assigned side is ${aiSide.toUpperCase()}. Your assigned side is ${userSide?.toUpperCase()}. The debate topic is: "${selectedTopic?.title || 'General Debate Topic'}". My response should be concise, focusing on 1-2 key points, and suitable for a debate round. I will not introduce new topics unless necessary for rebuttal. I will argue strictly from my assigned side (${aiSide.toUpperCase()}).`;
+
+    const prompt = `Debate History:\n${debateContext}\n\nYour last statement: "${finalUserSpeech}"\n\nIt is my turn to speak. I will respond to your last statement from my assigned side.`;
 
     try {
-      const aiResponse = await GroqService.getCompletion(prompt, systemPrompt);
-      
-      setTranscript(prev => [...prev, {
-        speaker: 'AI Opponent',
-        text: aiResponse,
-        timestamp: new Date().toLocaleTimeString()
-      }]);
-      
-      setCurrentSpeaker(currentSpeaker === 'user' ? 'ai' : 'user');
-      setTimeRemaining(180); // Reset timer for next speaker
+      let aiResponse = "";
+      await GroqService.streamCompletion(prompt, (chunk) => {
+        aiResponse += chunk;
+        setTranscript((prev) => {
+          const lastMessage = prev[prev.length - 1];
+          if (lastMessage.speaker === 'AI Opponent') {
+            return [...prev.slice(0, -1), { ...lastMessage, text: aiResponse }];
+          } else {
+            return [...prev, { speaker: 'AI Opponent', text: aiResponse, timestamp: new Date().toLocaleTimeString() }];
+          }
+        });
+      }, currentRound.maxTokens, systemPrompt);
+      speak(aiResponse);
+
+      // Advance to next speaker/round logic
+      const nextRoundIndex = currentRoundIndex + 1;
+      if (nextRoundIndex < debateRounds.length) {
+        setCurrentRoundIndex(nextRoundIndex);
+        setCurrentSpeaker(debateRounds[nextRoundIndex].speaker);
+        setTimeRemaining(debateRounds[nextRoundIndex].duration);
+      } else {
+        // End of debate
+        endDebate();
+      }
+
     } catch (error) {
       console.error('Error getting AI response:', error);
       setTranscript(prev => [...prev, {
@@ -225,26 +213,112 @@ const LiveDebatePage: React.FC = () => {
     } finally {
       setAiThinking(false);
     }
+  }, [currentRoundIndex, currentSpeaker, debateRounds, userSide, selectedTopic, transcript, textInput, speak, cancelSpeech, endDebate, stop]);
+
+  useEffect(() => {
+    if (debateStarted && timeRemaining > 0 && currentSpeaker !== 'ai') { // Only countdown for user's turn
+      timerRef.current = setTimeout(() => {
+        setTimeRemaining(prev => prev - 1);
+      }, 1000);
+    } else if (timeRemaining === 0 && currentSpeaker === 'user') { // Only trigger handleSpeechEnd if user's turn ends
+      handleSpeechEnd(); // User's time is up
+    }
+
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, [debateStarted, timeRemaining, currentSpeaker, handleSpeechEnd]);
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const endDebate = async () => {
-    if (debateId) {
-      // Determine winner based on some logic (e.g., AI evaluation, user input)
-      // For now, let's assume user wins for demonstration purposes
-      const finalWinner = 'user'; 
+  const startDebate = async () => {
+    if (!user?.uid || !selectedTopic || !userSide) return; // Ensure user is logged in and topic/side selected
 
-      await DatabaseService.saveDebate(debateId, {
-        status: 'completed',
-        transcript: transcript,
-        winner: finalWinner,
-        // Add user_score, ai_score, and feedback here if available from AI evaluation
-      });
-      navigate(`/app/debate-results/${debateId}`);
+    const newDebate = await DatabaseService.createDebate({
+      user_id: user.uid,
+      topic_id: selectedTopic.id,
+      topic_title: selectedTopic.title,
+      user_side: userSide,
+      format: selectedFormat.name,
+      status: 'active',
+      transcript: [],
+    });
+    setDebateId(newDebate.id);
+    setDebateStarted(true);
+    setCurrentRoundIndex(0);
+    setCurrentSpeaker(debateRounds[0].speaker);
+    setTimeRemaining(debateRounds[0].duration);
+    setTranscript([]);
+
+    // Initial AI message based on topic and user's position
+    const aiSide = userSide === 'pro' ? 'con' : 'pro';
+    const initialAiPrompt = `I am an AI debate opponent. My assigned side is ${aiSide.toUpperCase()}. Your assigned side is ${userSide?.toUpperCase()}. The debate topic is: "${selectedTopic.title}". I will now present my opening argument for the ${aiSide} side, keeping it concise and to the point (max ${debateRounds[0].maxTokens} words).`;
+
+    setAiThinking(true);
+    setTranscript(prev => [...prev, { speaker: 'AI Opponent', text: '', timestamp: new Date().toLocaleTimeString() }]);
+
+    try {
+      let aiResponse = "";
+      await GroqService.streamCompletion(initialAiPrompt, (chunk) => {
+        aiResponse += chunk;
+        setTranscript((prev) => {
+          const lastMessage = prev[prev.length - 1];
+          if (lastMessage.speaker === 'AI Opponent') {
+            return [...prev.slice(0, -1), { ...lastMessage, text: aiResponse }];
+          } else {
+            return [...prev, { speaker: 'AI Opponent', text: aiResponse, timestamp: new Date().toLocaleTimeString() }];
+          }
+        });
+      }, debateRounds[0].maxTokens, initialAiPrompt);
+      speak(aiResponse);
+      setCurrentSpeaker('user'); // Switch to user after AI's opening
+      setTimeRemaining(debateRounds[1].duration); // Set timer for user's opening
+      setCurrentRoundIndex(1); // Move to next round
+
+    } catch (err) {
+      console.error('Error getting initial AI response:', err);
+      setTranscript(prev => [...prev, { speaker: 'AI Opponent',
+        text: 'I am having trouble starting the debate. Please try again.',
+        timestamp: new Date().toLocaleTimeString()
+      }]);
+    } finally {
+      setAiThinking(false);
     }
-    setDebateStarted(false);
-    setIsRecording(false);
-    setTimeRemaining(180);
-    // Navigate to results/scoring page
+  };
+
+  const toggleRecording = () => {
+    if (!isRecording) {
+      setIsRecording(true);
+      setTextInput(''); // Clear text input when starting recording
+      start(); // Start speech recognition
+    } else {
+      setIsRecording(false);
+      stop(); // Stop speech recognition
+      handleSpeechEnd(speechTranscript); // Pass the recognized speech to handleSpeechEnd
+    }
+  };
+
+  // Handle text input changes
+  const handleTextInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setTextInput(e.target.value);
+    if (isListening) {
+      stop(); // Stop speech recognition if user starts typing
+      setIsRecording(false);
+    }
+  };
+
+  // Handle sending text input on Enter key
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSpeechEnd(); // Use handleSpeechEnd for sending text as well
+    }
   };
 
   if (!debateStarted) {
@@ -288,33 +362,35 @@ const LiveDebatePage: React.FC = () => {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Available Topics
               </label>
-              {topicsLoading ? (
-                <div className="space-y-2">
-                  {[...Array(4)].map((_, i) => (
-                    <div key={i} className="h-12 bg-gray-200 rounded-lg animate-pulse"></div>
-                  ))}
-                </div>
-              ) : (
-                topics.map((topic: Topic) => (
-                  <button
-                    key={topic.id}
-                    onClick={() => {
-                      setSelectedTopic(topic);
-                      setCustomTopic('');
-                    }}
-                    className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                      selectedTopic?.id === topic.id
-                        ? 'border-primary-500 bg-primary-50 text-primary-700'
-                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className="font-medium">{topic.title}</div>
-                    <div className="text-sm text-gray-500">
-                      {topic.category} • Level {topic.difficulty_level}
-                    </div>
-                  </button>
-                ))
-              )}
+              <div className="max-h-[10rem] overflow-y-auto pr-2"> 
+                {topicsLoading ? (
+                  <div className="space-y-2">
+                    {[...Array(4)].map((_, i) => (
+                      <div key={i} className="h-12 bg-gray-200 rounded-lg animate-pulse"></div>
+                    ))}
+                  </div>
+                ) : (
+                                    topics.map((topic: Topic) => (
+                    <button
+                      key={topic.id}
+                      onClick={() => {
+                        setSelectedTopic(topic);
+                        setCustomTopic('');
+                      }}
+                      className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                        selectedTopic?.id === topic.id
+                          ? 'border-primary-500 bg-primary-50 text-primary-700'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                      } mb-2`}
+                    >
+                      <div className="font-medium">{topic.title}</div>
+                      <div className="text-sm text-gray-500">
+                        {topic.category} • Level {String(topic.difficulty_level)}
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
             </div>
           </div>
 
@@ -390,20 +466,15 @@ const LiveDebatePage: React.FC = () => {
         <div className="text-center">
           <button
             onClick={startDebate}
-            disabled={!user?.uid || !selectedTopic || !userSide || microphonePermission === false || microphonePermission === null}
+            disabled={!user?.uid || !selectedTopic || !userSide || !isSupported} // Check isSupported for mic
             className="bg-primary-600 text-white px-8 py-4 rounded-xl hover:bg-primary-700 transition-colors text-lg font-semibold flex items-center space-x-3 mx-auto disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Play className="w-6 h-6" />
             <span>Start Debate</span>
           </button>
-          {microphonePermission === false && (
+          {!isSupported && (
             <p className="text-red-500 text-sm mt-2">
-              Microphone access denied. Please enable it in your browser settings to start the debate.
-            </p>
-          )}
-          {microphonePermission === null && (
-            <p className="text-gray-500 text-sm mt-2">
-              Awaiting microphone permission...
+              Speech recognition not supported in your browser. Please use text input.
             </p>
           )}
         </div>
@@ -446,8 +517,8 @@ const LiveDebatePage: React.FC = () => {
                 Current Speaker: {currentSpeaker === 'user' ? 'You' : 'AI Opponent'}
               </h2>
               <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-                currentSpeaker === 'user' 
-                  ? 'bg-primary-100 text-primary-700' 
+                currentSpeaker === 'user'
+                  ? 'bg-primary-100 text-primary-700'
                   : 'bg-secondary-100 text-secondary-700'
               }`}>
                 {currentSpeaker === 'user' ? 'Your Turn' : 'AI Speaking'}
@@ -459,10 +530,11 @@ const LiveDebatePage: React.FC = () => {
                 <button
                   onClick={toggleRecording}
                   className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-4 transition-all ${
-                    isRecording 
-                      ? 'bg-red-500 hover:bg-red-600 animate-pulse' 
+                    isRecording
+                      ? 'bg-red-500 hover:bg-red-600 animate-pulse'
                       : 'bg-primary-500 hover:bg-primary-600'
                   }`}
+                  disabled={!isSupported || aiThinking} // Disable if not supported or AI is thinking
                 >
                   {isRecording ? (
                     <MicOff className="w-10 h-10 text-white" />
@@ -473,6 +545,7 @@ const LiveDebatePage: React.FC = () => {
                 <p className="text-gray-600">
                   {isRecording ? 'Recording your speech...' : 'Click to start speaking'}
                 </p>
+                {speechError && <p className="text-red-500 text-sm mt-2">Microphone Error: {speechError}</p>}
               </div>
             ) : (
               <div className="text-center py-8">
@@ -489,6 +562,27 @@ const LiveDebatePage: React.FC = () => {
                 )}
               </div>
             )}
+
+            {/* Hybrid Input Textarea */}
+            <div className="mt-4">
+              <textarea
+                value={textInput}
+                onChange={handleTextInputChange}
+                onKeyDown={handleKeyDown}
+                placeholder="Type your argument here..." 
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-y"
+                rows={4}
+                disabled={isRecording || aiThinking} // Disable if recording or AI is thinking
+              />
+              <button
+                onClick={() => handleSpeechEnd()} // Send text input
+                disabled={!textInput.trim() || isRecording || aiThinking} // Disable if no text, recording, or AI is thinking
+                className="mt-2 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors float-right"
+              >
+                Send Argument
+              </button>
+            </div>
+
           </div>
 
           {/* Transcript */}
@@ -559,19 +653,19 @@ const LiveDebatePage: React.FC = () => {
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">Matter</span>
                 <div className="w-20 bg-gray-200 rounded-full h-2">
-                  <div className="bg-primary-500 h-2 rounded-full" style={{width: '75%'}}></div>
+                  <div className="bg-primary-500 h-2 rounded-full" style={{ width: '75%' }}></div>
                 </div>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">Manner</span>
                 <div className="w-20 bg-gray-200 rounded-full h-2">
-                  <div className="bg-secondary-500 h-2 rounded-full" style={{width: '80%'}}></div>
+                  <div className="bg-secondary-500 h-2 rounded-full" style={{ width: '80%' }}></div>
                 </div>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">Method</span>
                 <div className="w-20 bg-gray-200 rounded-full h-2">
-                  <div className="bg-accent-500 h-2 rounded-full" style={{width: '70%'}}></div>
+                  <div className="bg-accent-500 h-2 rounded-full" style={{ width: '70%' }}></div>
                 </div>
               </div>
             </div>

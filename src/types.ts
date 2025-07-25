@@ -253,7 +253,7 @@ export interface ExerciseAttempt {
 }
 
 export interface AIFeedback {
-  verdict: 'correct' | 'incorrect' | 'partial';
+  verdict: 'correct' | 'partial' | 'incorrect';
   explanation: string;
   improvement_advice: string[];
   skill_score: number;
@@ -288,4 +288,31 @@ export interface LearningAnalytics {
   totalXPEarned: number;
   skillProgress: (UserSkillProgress & { skill?: Skill })[];
   recentActivity: (ExerciseAttempt | UserLessonCompletion)[];
+}
+
+export interface DebateEvaluationResult {
+  user_score: {
+    matter: number; // Content, arguments, evidence
+    manner: number; // Delivery, style, clarity
+    method: number; // Structure, strategy, time management
+    overall: number; // Overall score out of 100
+  };
+  ai_score: {
+    matter: number;
+    manner: number;
+    method: number;
+    overall: number;
+  };
+  feedback: {
+    strengths: string; // General strengths of the user's performance
+    improvements: string; // Key areas for the user to improve
+    specific_examples: { // Specific examples from the transcript
+      speaker: 'user' | 'ai';
+      text_snippet: string;
+      comment: string;
+      type: 'strength' | 'weakness';
+    }[];
+  };
+  winner: 'user' | 'ai' | 'tie';
+  explanation: string; // Overall explanation for the winner/scores
 }
