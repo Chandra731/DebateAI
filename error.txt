@@ -1,10 +1,7 @@
-Transform failed with 1 error:
-C:/Users/yeddu/OneDrive/Desktop/Projects/Debate-AI/project/src/services/database.ts:189:9: ERROR: Expected ";" but found "async"
-C:/Users/yeddu/OneDrive/Desktop/Projects/Debate-AI/project/src/services/database.ts:189:9
-Expected ";" but found "async"
-187|  
-188|    // --- LEADERBOARD ---
-189|    static async getLeaderboard(activeTab: string, timeFilter: string, leaderboardType: 'debate' | 'skill'): Promise<Profile[]> {
-   |           ^
-190|      try {
-191|        let orderByField: string;
+ReferenceError: getData is not defined
+    at DatabaseService.createDebate (database.ts:196:7)
+    at async startDebate (LiveDebatePage.tsx:260:23) Object
+createDebate @ database.ts:198
+database.ts:199  Uncaught (in promise) Error: Failed to create debate session.
+    at DatabaseService.createDebate (database.ts:199:13)
+    at async startDebate (LiveDebatePage.tsx:260:23)

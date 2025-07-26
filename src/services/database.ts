@@ -5,8 +5,14 @@
  * All methods are static and can be called directly on the class.
  */
 import { db } from '../lib/firebase';
-import { collection, doc, getDoc, setDoc, getDocs, query, where, orderBy, limit, updateDoc, addDoc, deleteDoc } from 'firebase/firestore';
+import { collection, doc, getDoc,setDoc, getDocs, query, where, orderBy, limit, updateDoc, addDoc, deleteDoc, Timestamp, DocumentSnapshot } from 'firebase/firestore';
 import { Profile, Topic, Case, Debate, Achievement, UserAchievement, Feature, Testimonial, Statistics } from '../types';
+
+function getData<T>(doc: DocumentSnapshot): T {
+  return { id: doc.id, ...doc.data() } as T;
+}
+import { DocumentSnapshot } from 'firebase/firestore';
+
 
 export class DatabaseService {
   // --- PROFILE MANAGEMENT ---

@@ -265,6 +265,7 @@ const LiveDebatePage: React.FC = () => {
       format: selectedFormat.name,
       status: 'active',
       transcript: [],
+      created_at: new Date(),
     });
 
     if (!newDebate) {
