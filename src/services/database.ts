@@ -195,7 +195,7 @@ static async saveCase(caseData: Omit<Case, 'id' | 'created_at'>): Promise<Case> 
       if (!newDebate.exists()) throw new Error("Failed to create debate session.");
       return getData<Debate>(newDebate);
     } catch (error) {
-      logger.error(error as Error, { component: 'DatabaseService', action: 'createDebate' });
+      console.error(error as Error, { component: 'DatabaseService', action: 'createDebate' });
       throw new Error('Failed to create debate session.');
     }
   }
