@@ -14,7 +14,7 @@ A free, open-source, and production-ready platform designed to help students and
 |---|---|---|
 | ![Lesson Page](screenshots/LessonPage.png) | ![Exercise Page](screenshots/ExercisePage.png) | ![Case Prep Page](screenshots/CasePrepPage.png) |
 
-| Live Debate Page  | Profile Page  |
+| Live Debate Page  | Live Debate Results  | Profile Page  |
 |---|---|---|
 | ![Live Debate Page](screenshots/LiveDebatePage.png) | ![Live Debate Results](screenshots/LiveDebateResultsPage.png) | ![Profile Page](screenshots/ProfilePage.png) |
 
