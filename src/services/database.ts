@@ -145,45 +145,39 @@ export class DatabaseService {
     }
   }
 
-  /**
-   * Deletes a debate topic from Firestore.
-   * @param topicId - The ID of the topic to delete.
-   */
-  static async deleteTopic(topicId: string): Promise<void> {
-    try {
-      await deleteDoc(doc(db, 'topics', topicId));
-    } catch (error) {
-    }
-  }
-
   // --- CASE MANAGEMENT ---
   /**
    * Saves a user's case preparation data to Firestore.
    * @param caseData - The case data to save.
    * @returns The newly created case object or null on error.
    */
-  static async saveCase(caseData: Omit<Case, 'id' | 'created_at'>): Promise<Case | null> {
-    try {
-      const docRef = await addDoc(collection(db, 'cases'), { ...caseData, created_at: new Date() });
-      const newCase = await getDoc(docRef);
-      return newCase.exists() ? { id: newCase.id, ...newCase.data() } as Case : null;
-    } catch (error) {
-      return null;
-    }
-  }
+
 
   /**
    * Fetches all cases for a specific user from Firestore.
    * @param userId - The ID of the user whose cases to fetch.
    * @returns An array of the user's case objects.
    */
+static async saveCase(caseData: Omit<Case, 'id' | 'created_at'>): Promise<Case> {
+    try {
+      const docRef = await addDoc(collection(db, 'cases'), { ...caseData, created_at: Timestamp.now() });
+      const newCase = await getDoc(docRef);
+      if (!newCase.exists()) throw new Error("Failed to save case.");
+      return getData<Case>(newCase);
+    } catch (error) {
+      logger.error(error as Error, { component: 'DatabaseService', action: 'saveCase' });
+      throw new Error('Failed to save case.');
+    }
+  }
+
   static async getUserCases(userId: string): Promise<Case[]> {
     try {
       const q = query(collection(db, 'cases'), where('user_id', '==', userId), orderBy('created_at', 'desc'));
       const querySnapshot = await getDocs(q);
-      return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Case));
+      return querySnapshot.docs.map(doc => getData<Case>(doc));
     } catch (error) {
-      return [];
+      logger.error(error as Error, { component: 'DatabaseService', action: 'getUserCases' });
+      throw new Error('Failed to fetch user cases.');
     }
   }
 
@@ -193,13 +187,16 @@ export class DatabaseService {
    * @param debateData - The data for the new debate.
    * @returns The newly created debate object or null on error.
    */
-  static async createDebate(debateData: Omit<Debate, 'id' | 'created_at'>): Promise<Debate | null> {
+ // --- DEBATE MANAGEMENT ---
+  static async createDebate(debateData: Omit<Debate, 'id' | 'created_at'>): Promise<Debate> {
     try {
-      const docRef = await addDoc(collection(db, 'debates'), { ...debateData, created_at: new Date() });
+      const docRef = await addDoc(collection(db, 'debates'), { ...debateData, created_at: Timestamp.now() });
       const newDebate = await getDoc(docRef);
-      return newDebate.exists() ? { id: newDebate.id, ...newDebate.data() } as Debate : null;
+      if (!newDebate.exists()) throw new Error("Failed to create debate session.");
+      return getData<Debate>(newDebate);
     } catch (error) {
-      return null;
+      logger.error(error as Error, { component: 'DatabaseService', action: 'createDebate' });
+      throw new Error('Failed to create debate session.');
     }
   }
 

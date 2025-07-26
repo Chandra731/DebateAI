@@ -1,210 +1,144 @@
-import { useState, useEffect, useCallback, DependencyList } from 'react';
+/**
+ * @file useDatabase.ts
+ * @description This file contains all the React Query hooks for interacting with the Firestore database.
+ * It provides a clean, consistent, and robust API for components to fetch and mutate data.
+ */
+import { useQuery, useMutation, useQueryClient, UseQueryResult } from 'react-query';
 import { DatabaseService } from '../services/database';
 import { useAuth } from '../contexts/AuthContext';
-import { db } from '../lib/firebase'; // Import db
-import { doc, onSnapshot } from 'firebase/firestore'; // Import onSnapshot
 import { Profile, Topic, Debate, Case, Achievement, UserAchievement } from '../types';
 
-// Generic hook for data fetching with loading states
-function useAsyncData<T>(
-  fetchFn: () => Promise<T>,
-  dependencies: DependencyList = [],
-  initialData?: T
-) {
-  const [data, setData] = useState<T | undefined>(initialData);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const refetch = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const result = await fetchFn();
-      setData(result);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An error occurred';
-      setError(errorMessage);
-      console.error('Data fetch error:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, dependencies);
-
-  useEffect(() => {
-    refetch();
-  }, [refetch]);
-
-  return { data, loading, error, refetch };
-}
-
-export function useProfile() {
+// --- Profile Hooks ---
+export const useProfile = () => {
   const { user } = useAuth();
-  
-  const { data: profile, loading, error, refetch } = useAsyncData<Profile | null>(
-    async () => {
+  const queryKey = ['profile', user?.uid];
+
+  const { data, isLoading, error } = useQuery<Profile | null, Error>(
+    queryKey,
+    () => {
       if (!user?.uid) return null;
-      return await DatabaseService.getProfile(user.uid);
+      return DatabaseService.getProfile(user.uid);
     },
-    [user?.uid]
+    {
+      enabled: !!user?.uid, // Query will not run until the user's UID is available
+    }
   );
 
-  const updateProfile = useCallback(async (updates: Partial<Profile>) => {
-    if (!user?.uid) throw new Error('User not authenticated');
-    
-    const updatedProfile = await DatabaseService.updateProfile(user.uid, updates);
-    await refetch(); // Refresh the data
-    return updatedProfile;
-  }, [user?.uid, refetch]);
+  const cases = data || []; 
 
-  return { 
-    profile, 
-    loading, 
-    error, 
-    updateProfile, 
-    refetch 
-  };
-}
+  return { data: cases, isLoading, error };
+};
 
-export function useTopics(activeOnly = true) {
-  const { data: topics, loading, error, refetch } = useAsyncData<Topic[]>(
+export const useUpdateProfile = () => {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  const { mutateAsync, isLoading, error } = useMutation<Profile, Error, Partial<Profile>>(
+    (updates) => {
+      if (!user?.uid) throw new Error('User not authenticated for profile update.');
+      return DatabaseService.updateProfile(user.uid, updates);
+    },
+    {
+      onSuccess: () => {
+        // When the mutation is successful, invalidate the profile query to trigger a refetch
+        queryClient.invalidateQueries(['profile', user?.uid]);
+      },
+    }
+  );
+
+  return { updateProfile: mutateAsync, isUpdating: isLoading, error };
+};
+
+
+// --- Topic Hooks ---
+export const useTopics = (activeOnly = true): UseQueryResult<Topic[], Error> => {
+  return useQuery<Topic[], Error>(
+    ['topics', activeOnly],
     () => DatabaseService.getTopics(activeOnly),
-    [activeOnly],
-    []
+    {
+      initialData: [],
+    }
   );
+};
 
-  return { topics, loading, error, refetch };
-}
 
-export function useUserDebates() {
+// --- Debate Hooks ---
+export const useUserDebates = (): UseQueryResult<Debate[], Error> => {
   const { user } = useAuth();
-  
-  const { data: debates, loading, error, refetch } = useAsyncData<Debate[]>(
-    async () => {
-      if (!user?.uid) return [];
-      return await DatabaseService.getUserDebates(user.uid);
+  const queryKey = ['userDebates', user?.uid];
+
+  return useQuery<Debate[], Error>(
+    queryKey,
+    () => {
+      if (!user?.uid) return []; // Return empty array if no user
+      return DatabaseService.getUserDebates(user.uid);
     },
-    [user?.uid],
-    []
+    {
+      enabled: !!user?.uid,
+      initialData: [],
+    }
   );
+};
 
-  return { debates, loading, error, refetch };
-}
 
-export function useUserCases() {
+// --- Case Hooks ---
+export const useUserCases = (): UseQueryResult<Case[], Error> => {
   const { user } = useAuth();
-  
-  const { data: cases, loading, error, refetch } = useAsyncData<Case[]>(
-    async () => {
+  const queryKey = ['userCases', user?.uid];
+
+  return useQuery<Case[], Error>(
+    queryKey,
+    () => {
       if (!user?.uid) return [];
-      return await DatabaseService.getUserCases(user.uid);
+      return DatabaseService.getUserCases(user.uid);
     },
-    [user?.uid],
-    []
+    {
+      enabled: !!user?.uid,
+      initialData: [],
+    }
   );
+};
 
-  return { cases, loading, error, refetch };
-}
 
-export function useLeaderboard(type = 'global', timeFilter = 'allTime', leaderboardType: 'debate' | 'skill' = 'debate') {
+// --- Leaderboard Hooks ---
+export const useLeaderboard = (type = 'global', timeFilter = 'allTime', leaderboardType: 'debate' | 'skill' = 'debate'): UseQueryResult<Profile[], Error> => {
   const { user } = useAuth();
-  const { data: leaderboard, loading, error, refetch } = useAsyncData<Profile[]>(
-    () => DatabaseService.getLeaderboard(user, type, timeFilter, leaderboardType),
-    [user, type, timeFilter, leaderboardType],
-    []
+  const queryKey = ['leaderboard', type, timeFilter, leaderboardType, user?.uid]; // Add user to key to refetch on login
+  
+  return useQuery<Profile[], Error>(
+    queryKey,
+    () => DatabaseService.getLeaderboard(type, timeFilter, leaderboardType),
+    {
+      initialData: [],
+    }
   );
+};
 
-  return { leaderboard, loading, error, refetch };
-}
 
-export function useAchievements() {
-  const { data: achievements, loading, error, refetch } = useAsyncData<Achievement[]>(
+// --- Achievement Hooks ---
+export const useAchievements = (): UseQueryResult<Achievement[], Error> => {
+  return useQuery<Achievement[], Error>(
+    'achievements',
     () => DatabaseService.getAchievements(),
-    [],
-    []
+    {
+      initialData: [],
+    }
   );
+};
 
-  return { achievements, loading, error, refetch };
-}
-
-export function useUserAchievements() {
+export const useUserAchievements = (): UseQueryResult<UserAchievement[], Error> => {
   const { user } = useAuth();
-  
-  const { data: userAchievements, loading, error, refetch } = useAsyncData<UserAchievement[]>(
-    async () => {
+  const queryKey = ['userAchievements', user?.uid];
+
+  return useQuery<UserAchievement[], Error>(
+    queryKey,
+    () => {
       if (!user?.uid) return [];
-      return await DatabaseService.getUserAchievements(user.uid);
+      return DatabaseService.getUserAchievements(user.uid);
     },
-    [user?.uid],
-    []
+    {
+      enabled: !!user?.uid,
+      initialData: [],
+    }
   );
-
-  return { userAchievements, loading, error, refetch };
-}
-
-// Custom hook for real-time subscriptions (Firestore equivalent)
-export function useRealtimeSubscription<T>(
-  collectionName: string,
-  docId: string,
-  callback: (data: T | null) => void,
-  dependencies: DependencyList = []
-) {
-  useEffect(() => {
-    const docRef = doc(db, collectionName, docId);
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        callback({ id: docSnap.id, ...docSnap.data() } as T);
-      } else {
-        callback(null);
-      }
-    });
-    
-    return () => {
-      unsubscribe();
-    };
-  }, [collectionName, docId, callback, ...dependencies]);
-}
-
-// Debounced hook for search functionality
-export function useDebounce<T>(value: T, delay: number): T {
-  const [debouncedValue, setDebouncedValue] = useState<T>(value);
-
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedValue(value);
-    }, delay);
-
-    return () => {
-      clearTimeout(handler);
-    };
-  }, [value, delay]);
-
-  return debouncedValue;
-}
-
-// Local storage hook with type safety
-export function useLocalStorage<T>(
-  key: string,
-  initialValue: T
-): [T, (value: T | ((val: T) => T)) => void] {
-  const [storedValue, setStoredValue] = useState<T>(() => {
-    try {
-      const item = window.localStorage.getItem(key);
-      return item ? JSON.parse(item) : initialValue;
-    } catch (error) {
-      console.error(`Error reading localStorage key "${key}":`, error);
-      return initialValue;
-    }
-  });
-
-  const setValue = useCallback((value: T | ((val: T) => T)) => {
-    try {
-      const valueToStore = value instanceof Function ? value(storedValue) : value;
-      setStoredValue(valueToStore);
-      window.localStorage.setItem(key, JSON.stringify(valueToStore));
-    } catch (error) {
-      console.error(`Error setting localStorage key "${key}":`, error);
-    }
-  }, [key, storedValue]);
-
-  return [storedValue, setValue];
-}
+};

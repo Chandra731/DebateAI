@@ -18,7 +18,7 @@ import {
 import { useNewSpeechRecognition } from "@/hooks/useNewSpeechRecognition";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { DebateEvaluationResult } from '../types';
-
+import { useQueryClient } from 'react-query';
 interface Topic {
   id: string;
   title: string;
@@ -27,6 +27,8 @@ interface Topic {
 }
 
 const LiveDebatePage: React.FC = () => {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [isRecording, setIsRecording] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [debateStarted, setDebateStarted] = useState(false);
@@ -48,9 +50,7 @@ const LiveDebatePage: React.FC = () => {
     { name: 'Oxford Style', duration: '5 min speeches', description: 'Opening statements followed by rebuttals' },
     { name: 'Quick Practice', duration: '2 min speeches', description: 'Fast-paced practice rounds' }
   ];
-
-  const navigate = useNavigate();
-  const { topics, loading: topicsLoading } = useTopics();
+  const { topics = [], loading: topicsLoading } = useTopics();
   const { profile, refetch: refetchProfile } = useProfile(); // Get refetch from useProfile
   const { user } = useAuth();
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
@@ -80,12 +80,12 @@ const LiveDebatePage: React.FC = () => {
   const [selectedFormat, setSelectedFormat] = useState(debateFormats[0]);
 
   const debateRounds = [
-    { name: 'Opening Statement', speaker: 'user', duration: 180, maxTokens: 150 },
-    { name: 'Opening Statement', speaker: 'ai', duration: 180, maxTokens: 150 },
-    { name: 'Rebuttal', speaker: 'user', duration: 120, maxTokens: 100 },
-    { name: 'Rebuttal', speaker: 'ai', duration: 120, maxTokens: 100 },
-    { name: 'Closing Statement', speaker: 'user', duration: 90, maxTokens: 75 },
-    { name: 'Closing Statement', speaker: 'ai', duration: 90, maxTokens: 75 },
+    { name: 'Opening Statement', speaker: 'user', duration: 180, maxTokens: 350 },
+    { name: 'Opening Statement', speaker: 'ai', duration: 180, maxTokens: 350 },
+    { name: 'Rebuttal', speaker: 'user', duration: 120, maxTokens: 300 },
+    { name: 'Rebuttal', speaker: 'ai', duration: 120, maxTokens: 300 },
+    { name: 'Closing Statement', speaker: 'user', duration: 90, maxTokens: 250 },
+    { name: 'Closing Statement', speaker: 'ai', duration: 90, maxTokens: 250 },
   ];
 
   const endDebate = async () => {
@@ -102,6 +102,10 @@ const LiveDebatePage: React.FC = () => {
           userSide,
           aiSide
         );
+        // Add a simple validation check
+        if (typeof evaluation?.user_score?.overall !== 'number') {
+          throw new Error("Received malformed evaluation from AI service.");
+        }
       } catch (evalError) {
         console.error("Error during AI debate evaluation:", evalError);
         // Fallback if evaluation fails
@@ -110,28 +114,28 @@ const LiveDebatePage: React.FC = () => {
           ai_score: { matter: 0, manner: 0, method: 0, overall: 0 },
           feedback: {
             strengths: "Could not generate detailed feedback.",
-            improvements: "Please check your internet connection or try again later.",
+            improvements: "The AI evaluation service failed to return a valid analysis. Please try again later.",
             specific_examples: [],
           },
           winner: 'tie',
-          explanation: "Evaluation failed due to an error.",
+          explanation: "Evaluation failed due to a server or AI error.",
         };
       }
+
 
       await DatabaseService.saveDebate(debateId, {
         status: 'completed',
         transcript: transcript,
         winner: evaluation?.winner || 'tie',
-        user_score: evaluation?.user_score?.overall || 0,
-        ai_score: evaluation?.ai_score?.overall || 0,
-        feedback: {
-          strengths: evaluation?.feedback?.strengths || "No detailed strengths provided.",
-          improvements: evaluation?.feedback?.improvements || "No detailed improvements provided.",
-        },
+        user_score: evaluation?.user_score || 0,
+        ai_score: evaluation?.ai_score || 0,
+        feedback: evaluation?.feedback || {},
         winner_side: evaluation?.winner === 'user' ? userSide : (evaluation?.winner === 'ai' ? aiSide : null),
       });
       
-      refetchProfile(); // Refetch profile data to update total debates/wins
+      // Invalidate queries to trigger refetching on other pages
+      queryClient.invalidateQueries(['profile', user?.uid]);
+      queryClient.invalidateQueries(['userDebates', user?.uid]);
 
       navigate(`/app/debate-results/${debateId}`);
     }
@@ -148,64 +152,77 @@ const LiveDebatePage: React.FC = () => {
 
     if (!finalUserSpeech && currentSpeaker === 'user') {
       console.log("No speech or text detected from user.");
-      // Optionally, show a message to the user that no speech was detected
-      // For now, just switch to AI's turn if user didn't speak
-      setCurrentSpeaker('ai');
-      setTimeRemaining(debateRounds[currentRoundIndex].duration); // Set timer for AI's turn
-      return;
-    }
-
-    // Add user's final statement to transcript
-    if (currentSpeaker === 'user') {
-      setTranscript(prev => [...prev, {
-        speaker: 'You',
-        text: finalUserSpeech,
-        timestamp: new Date().toLocaleTimeString()
-      }]);
-      setTextInput(''); // Clear text input after sending
-    }
-
-    setAiThinking(true);
-    cancelSpeech(); // Cancel any ongoing AI speech
-
-    const debateContext = transcript.map(entry => `${entry.speaker}: ${entry.text}`).join('\n');
-
-    const aiSide = userSide === 'pro' ? 'con' : 'pro';
-    const currentRound = debateRounds[currentRoundIndex];
-
-    const systemPrompt = `You are an AI debate opponent. My assigned side is ${aiSide.toUpperCase()}. Your assigned side is ${userSide?.toUpperCase()}. The debate topic is: "${selectedTopic?.title || 'General Debate Topic'}". My response should be concise, focusing on 1-2 key points, and suitable for a debate round. I will not introduce new topics unless necessary for rebuttal. I will argue strictly from my assigned side (${aiSide.toUpperCase()}).`;
-
-    const prompt = `Debate History:\n${debateContext}\n\nYour last statement: "${finalUserSpeech}"\n\nIt is my turn to speak. I will respond to your last statement from my assigned side.`;
-
-    try {
-      let aiResponse = "";
-      await GroqService.streamCompletion(prompt, (chunk) => {
-        aiResponse += chunk;
-        setTranscript((prev) => {
-          const lastMessage = prev[prev.length - 1];
-          if (lastMessage.speaker === 'AI Opponent') {
-            return [...prev.slice(0, -1), { ...lastMessage, text: aiResponse }];
-          } else {
-            return [...prev, { speaker: 'AI Opponent', text: aiResponse, timestamp: new Date().toLocaleTimeString() }];
-          }
-        });
-      }, currentRound.maxTokens, systemPrompt);
-      speak(aiResponse);
-
-      // Advance to next speaker/round logic
+      // Advance turn if user says nothing
       const nextRoundIndex = currentRoundIndex + 1;
       if (nextRoundIndex < debateRounds.length) {
         setCurrentRoundIndex(nextRoundIndex);
         setCurrentSpeaker(debateRounds[nextRoundIndex].speaker);
         setTimeRemaining(debateRounds[nextRoundIndex].duration);
       } else {
-        // End of debate
-        endDebate();
+        await endDebate();
+      }
+      return;
+    }
+
+    const newTranscript = [...transcript, {
+      speaker: 'You',
+      text: finalUserSpeech,
+      timestamp: new Date().toLocaleTimeString()
+    }];
+    
+    if (currentSpeaker === 'user') {
+      setTranscript(newTranscript);
+      setTextInput('');
+    }
+
+    setAiThinking(true);
+    cancelSpeech();
+
+    const debateContext = newTranscript.map(entry => `${entry.speaker}: ${entry.text}`).join('\n');
+    const aiSide = userSide === 'pro' ? 'con' : 'pro';
+    const currentRound = debateRounds[currentRoundIndex + 1] || debateRounds[debateRounds.length - 1];
+
+    const systemPrompt = `You are a skilled AI debate opponent named 'DebateVerse AI'. You must argue strictly from the ${aiSide.toUpperCase()} side of the motion.\nThe debate topic is: "${selectedTopic?.title}".\nMy side is ${userSide?.toUpperCase()}. Your side is ${aiSide.toUpperCase()}.\nThe current round is: ${currentRound.name}.\nYour response must be concise, directly addressing my last point, and stay within the token limit for this round (${currentRound.maxTokens} tokens).\n**Crucially, do NOT repeat your previous arguments. You must introduce new points or build directly on my last statement.** Do not act as an assistant; act as a debater.`
+
+    const prompt = `Here is the debate history so far:\n${debateContext}\n\nMy last statement was: "${finalUserSpeech}"\n\nNow, it is your turn. As the ${aiSide.toUpperCase()} speaker, deliver your response. Do not repeat yourself.`
+
+    // Add a placeholder for the AI's response
+    setTranscript(prev => [...prev, { speaker: 'AI Opponent', text: '...', timestamp: new Date().toLocaleTimeString() }]);
+
+    try {
+      let fullAiResponse = "";
+      await GroqService.streamCompletion(
+        prompt,
+        (chunk) => {
+          fullAiResponse += chunk;
+          setTranscript((prev) => {
+            const lastMessage = prev[prev.length - 1];
+            if (lastMessage?.speaker === 'AI Opponent') {
+              return [...prev.slice(0, -1), { ...lastMessage, text: fullAiResponse }];
+            }
+            return prev;
+          });
+        },
+        currentRound.maxTokens,
+        systemPrompt
+      );
+
+      if (!isMuted) {
+        speak(fullAiResponse);
+      }
+
+      const nextRoundIndex = currentRoundIndex + 1;
+      if (nextRoundIndex < debateRounds.length) {
+        setCurrentRoundIndex(nextRoundIndex);
+        setCurrentSpeaker(debateRounds[nextRoundIndex].speaker);
+        setTimeRemaining(debateRounds[nextRoundIndex].duration);
+      } else {
+        await endDebate();
       }
 
     } catch (error) {
       console.error('Error getting AI response:', error);
-      setTranscript(prev => [...prev, {
+      setTranscript(prev => [...prev.slice(0, -1), {
         speaker: 'AI Opponent',
         text: 'I am having trouble generating a response right now. Please try again.',
         timestamp: new Date().toLocaleTimeString()
@@ -213,7 +230,7 @@ const LiveDebatePage: React.FC = () => {
     } finally {
       setAiThinking(false);
     }
-  }, [currentRoundIndex, currentSpeaker, debateRounds, userSide, selectedTopic, transcript, textInput, speak, cancelSpeech, endDebate, stop]);
+  }, [currentRoundIndex, currentSpeaker, debateRounds, userSide, selectedTopic, transcript, textInput, speak, cancelSpeech, endDebate, stop, isMuted]);
 
   useEffect(() => {
     if (debateStarted && timeRemaining > 0 && currentSpeaker !== 'ai') { // Only countdown for user's turn
@@ -238,7 +255,7 @@ const LiveDebatePage: React.FC = () => {
   };
 
   const startDebate = async () => {
-    if (!user?.uid || !selectedTopic || !userSide) return; // Ensure user is logged in and topic/side selected
+    if (!user?.uid || !selectedTopic || !userSide) return;
 
     const newDebate = await DatabaseService.createDebate({
       user_id: user.uid,
@@ -249,47 +266,27 @@ const LiveDebatePage: React.FC = () => {
       status: 'active',
       transcript: [],
     });
+
+    if (!newDebate) {
+      // Handle error case where debate creation fails
+      console.error("Failed to create debate in the database.");
+      return;
+    }
+
     setDebateId(newDebate.id);
     setDebateStarted(true);
     setCurrentRoundIndex(0);
     setCurrentSpeaker(debateRounds[0].speaker);
     setTimeRemaining(debateRounds[0].duration);
     setTranscript([]);
-
-    // Initial AI message based on topic and user's position
+    
+    // If user is 'pro', AI is 'con', and vice-versa.
     const aiSide = userSide === 'pro' ? 'con' : 'pro';
-    const initialAiPrompt = `I am an AI debate opponent. My assigned side is ${aiSide.toUpperCase()}. Your assigned side is ${userSide?.toUpperCase()}. The debate topic is: "${selectedTopic.title}". I will now present my opening argument for the ${aiSide} side, keeping it concise and to the point (max ${debateRounds[0].maxTokens} words).`;
+    const openingRound = debateRounds[0];
 
-    setAiThinking(true);
-    setTranscript(prev => [...prev, { speaker: 'AI Opponent', text: '', timestamp: new Date().toLocaleTimeString() }]);
-
-    try {
-      let aiResponse = "";
-      await GroqService.streamCompletion(initialAiPrompt, (chunk) => {
-        aiResponse += chunk;
-        setTranscript((prev) => {
-          const lastMessage = prev[prev.length - 1];
-          if (lastMessage.speaker === 'AI Opponent') {
-            return [...prev.slice(0, -1), { ...lastMessage, text: aiResponse }];
-          } else {
-            return [...prev, { speaker: 'AI Opponent', text: aiResponse, timestamp: new Date().toLocaleTimeString() }];
-          }
-        });
-      }, debateRounds[0].maxTokens, initialAiPrompt);
-      speak(aiResponse);
-      setCurrentSpeaker('user'); // Switch to user after AI's opening
-      setTimeRemaining(debateRounds[1].duration); // Set timer for user's opening
-      setCurrentRoundIndex(1); // Move to next round
-
-    } catch (err) {
-      console.error('Error getting initial AI response:', err);
-      setTranscript(prev => [...prev, { speaker: 'AI Opponent',
-        text: 'I am having trouble starting the debate. Please try again.',
-        timestamp: new Date().toLocaleTimeString()
-      }]);
-    } finally {
-      setAiThinking(false);
-    }
+    // The user speaks first in this setup.
+    // No initial AI message needed, the flow will be handled by the user's first turn.
+    // The UI will prompt the user to begin their opening statement.
   };
 
   const toggleRecording = () => {
@@ -370,25 +367,29 @@ const LiveDebatePage: React.FC = () => {
                     ))}
                   </div>
                 ) : (
-                                    topics.map((topic: Topic) => (
-                    <button
-                      key={topic.id}
-                      onClick={() => {
-                        setSelectedTopic(topic);
-                        setCustomTopic('');
-                      }}
-                      className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                        selectedTopic?.id === topic.id
-                          ? 'border-primary-500 bg-primary-50 text-primary-700'
-                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                      } mb-2`}
-                    >
-                      <div className="font-medium">{topic.title}</div>
-                      <div className="text-sm text-gray-500">
-                        {topic.category} • Level {String(topic.difficulty_level)}
-                      </div>
-                    </button>
-                  ))
+                  topics && topics.length > 0 ? (
+                    topics.map((topic: Topic) => (
+                      <button
+                        key={topic.id}
+                        onClick={() => {
+                          setSelectedTopic(topic);
+                          setCustomTopic('');
+                        }}
+                        className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                          selectedTopic?.id === topic.id
+                            ? 'border-primary-500 bg-primary-50 text-primary-700'
+                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                        } mb-2`}
+                      >
+                        <div className="font-medium">{topic.title}</div>
+                        <div className="text-sm text-gray-500">
+                          {topic.category} • Level {String(topic.difficulty_level)}
+                        </div>
+                      </button>
+                    ))
+                  ) : (
+                    <p className="text-center text-gray-500">No topics found. Please try again later.</p>
+                  )
                 )}
               </div>
             </div>

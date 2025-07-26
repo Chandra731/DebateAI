@@ -97,6 +97,50 @@ export class GroqService {
     }
   }
 
+  static async generateCase(
+    prompt: string,
+    systemPrompt?: string
+  ): Promise<DebateCase> {
+    logger.info('Attempting to generate case via Netlify function.', { prompt, systemPrompt });
+
+    try {
+      const response = await fetch(NETLIFY_FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 'generateCase',
+          payload: { prompt, systemPrompt },
+        }),
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        logger.error(new Error(`Netlify function request failed with status ${response.status}: ${errorBody}`), {
+          component: 'GroqService',
+          action: 'generateCase',
+          statusCode: response.status,
+          errorBody,
+        });
+        throw new Error(
+          `Netlify function request failed with status ${response.status}: ${errorBody}`
+        );
+      }
+
+      const data: DebateCase = await response.json();
+      logger.info('Successfully received case from Netlify function.', { data });
+      return data;
+    } catch (error) {
+      logger.error(error as Error, {
+        component: 'GroqService',
+        action: 'generateCase',
+        originalError: error,
+      });
+      throw new Error('Failed to generate case via Netlify function.');
+    }
+  }
+
   static async evaluateDebate(
     transcript: { speaker: string; text: string; timestamp: string }[],
     topic: string,

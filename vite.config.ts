@@ -43,6 +43,12 @@ export default defineConfig({
     port: 5173,
     host: true,
     cors: true,
+    proxy: {
+      '/.netlify/functions': {
+        target: 'http://localhost:9999',
+        changeOrigin: true,
+      },
+    },
   },
   preview: {
     port: 4173,

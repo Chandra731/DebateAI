@@ -1,11 +1,10 @@
-monitoring.ts:33 
- Error logged: 
-{level: 'error', message: 'Netlify function request failed with status 400: {"message":"Invalid request type"}', stack: 'Error: Netlify function request failed with status…/localhost:8888/src/pages/CasePrepPage.tsx:68:26)', timestamp: '2025-07-25T19:08:01.084Z', url: 'http://localhost:8888/app/case-prep', …}
-monitoring.ts:33 
- Error logged: 
-{level: 'error', message: 'Netlify function request failed with status 400: {"message":"Invalid request type"}', stack: 'Error: Netlify function request failed with status…/localhost:8888/src/pages/CasePrepPage.tsx:68:26)', timestamp: '2025-07-25T19:08:01.084Z', url: 'http://localhost:8888/app/case-prep', …}
-CasePrepPage.tsx:96 
- Error generating case: Error: Failed to get completion via Netlify function.
-    at GroqService.getCompletion (groqService.ts:47:13)
-    at async handleGenerateCase (CasePrepPage.tsx:63:26)
-﻿
+Transform failed with 1 error:
+C:/Users/yeddu/OneDrive/Desktop/Projects/Debate-AI/project/src/services/database.ts:189:9: ERROR: Expected ";" but found "async"
+C:/Users/yeddu/OneDrive/Desktop/Projects/Debate-AI/project/src/services/database.ts:189:9
+Expected ";" but found "async"
+187|  
+188|    // --- LEADERBOARD ---
+189|    static async getLeaderboard(activeTab: string, timeFilter: string, leaderboardType: 'debate' | 'skill'): Promise<Profile[]> {
+   |           ^
+190|      try {
+191|        let orderByField: string;

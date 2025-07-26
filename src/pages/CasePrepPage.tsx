@@ -5,12 +5,14 @@ import { DatabaseService } from '../services/database';
 import { useTopics, useUserCases } from '../hooks/useDatabase';
 import { useNotification } from '../contexts/NotificationContext';
 import { GroqService } from '../services/groqService';
+import { useQueryClient } from 'react-query';
 
 
 const CasePrepPage: React.FC = () => {
+  const queryClient = useQueryClient();
   const { user } = useAuth();
   const { topics, loading: topicsLoading } = useTopics();
-  const { cases: userCases, loading: casesLoading } = useUserCases();
+  const { data: userCases, isLoading: casesLoading } = useUserCases();
   const { showNotification } = useNotification();
   
   const [selectedTopic, setSelectedTopic] = useState<any>(null);
@@ -58,15 +60,10 @@ const CasePrepPage: React.FC = () => {
       Make sure the framing, contentions, rebuttals, examples, burdenAnalysis, and fallacyChecks are relevant to the topic and position.
       The language should be formal and suitable for a debate.`;
 
-      const systemPrompt = "You are an expert debate coach AI. Your task is to generate comprehensive and well-structured debate cases based on user-provided topics and positions. Provide clear, concise, and persuasive arguments, rebuttals, and examples. The output must be a valid JSON object as specified by the user.";
+      const systemPrompt = "You are an expert debate coach AI. Your task is to generate comprehensive and well-structured debate cases based on user-provided topics and positions. The output must be a valid JSON object as specified by the user.";
 
-      const aiResponse = await GroqService.getCompletion(prompt, systemPrompt);
-      const jsonMatch = aiResponse.match(/{[\s\S]*}/);
-      if (!jsonMatch) {
-        throw new Error("No JSON object found in AI response.");
-      }
-      const jsonString = jsonMatch[0];
-      const parsedCaseData = JSON.parse(jsonString);
+      // The backend now handles the JSON parsing, so we get a clean object.
+      const parsedCaseData = await GroqService.generateCase(prompt, systemPrompt);
       setCaseData(parsedCaseData);
 
       // Save case to database
@@ -84,7 +81,13 @@ const CasePrepPage: React.FC = () => {
         created_at: new Date().toISOString() // Add timestamp
       };
 
+      
+
+
       await DatabaseService.saveCase(caseToSave);
+
+      // Invalidate the user cases query to refetch the list
+      queryClient.invalidateQueries(['userCases', user.uid]);
 
       showNotification({
         type: 'success',
@@ -169,22 +172,26 @@ const CasePrepPage: React.FC = () => {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto">
-                  {topics.map((topic: any) => (
-                    <button
-                      key={topic.id}
-                      onClick={() => handleTopicSelect(topic)}
-                      className={`text-left p-3 rounded-lg border transition-colors ${
-                        selectedTopic?.id === topic.id
-                          ? 'border-primary-500 bg-primary-50 text-primary-700'
-                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                      }`}
-                    >
-                      <div className="font-medium">{topic.title}</div>
-                      <div className="text-sm text-gray-500">
-                        {topic.category} • Level {topic.difficulty_level}
-                      </div>
-                    </button>
-                  ))}
+                  {topics && topics.length > 0 ? (
+                    topics.map((topic: any) => (
+                      <button
+                        key={topic.id}
+                        onClick={() => handleTopicSelect(topic)}
+                        className={`text-left p-3 rounded-lg border transition-colors ${
+                          selectedTopic?.id === topic.id
+                            ? 'border-primary-500 bg-primary-50 text-primary-700'
+                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="font-medium">{topic.title}</div>
+                        <div className="text-sm text-gray-500">
+                          {topic.category} • Level {topic.difficulty_level}
+                        </div>
+                      </button>
+                    ))
+                  ) : (
+                    <p className="text-center text-gray-500">No topics found. Please try again later.</p>
+                  )}
                 </div>
               )}
             </div>
@@ -320,7 +327,7 @@ const CasePrepPage: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-3">
-                {userCases.map((caseItem: any) => (
+                {userCases && userCases.map((caseItem: any) => (
                   <button
                     key={caseItem.id}
                     onClick={() => handleViewCase(caseItem)}
@@ -332,7 +339,7 @@ const CasePrepPage: React.FC = () => {
                     </div>
                   </button>
                 ))}
-                {userCases.length === 0 && (
+                {userCases && userCases.length === 0 && (
                   <p className="text-sm text-gray-500 text-center">You have no saved cases.</p>
                 )}
               </div>
